@@ -39,6 +39,18 @@ class CommandParsing(unittest.TestCase):
             "b_cmd": ["src/drivers/b/CMakeLists.txt"],
         })
 
+    def test_builtins_of_apps_cpp_in(self):
+        tree = self.tree({
+            "src/systemcmds/shutdown/CMakeLists.txt": "px4_add_module(MODULE systemcmds__shutdown MAIN shutdown SRCS s.cpp)\n",
+            "platforms/common/apps.cpp.in": 'static void init(apps_map_type &apps)\n{\n\t${builtin_apps_string}\n'
+                                            '\tapps["shutdown"] = shutdown_main;\n\tapps["sleep"] = sleep_main;\n'
+                                            '\t// apps["not_this"] = x;\n}\n',
+        })
+        self.assertEqual(generate.commands_data(tree), {
+            "shutdown": ["platforms/common/apps.cpp.in", "src/systemcmds/shutdown/CMakeLists.txt"],
+            "sleep": ["platforms/common/apps.cpp.in"],
+        })
+
     def test_non_literal_main_stops(self):
         tree = self.tree({"src/a/CMakeLists.txt": "px4_add_module(MODULE a MAIN ${NAME})\n"})
         with self.assertRaisesRegex(generate.GenerateError, "not a literal"):
@@ -196,6 +208,12 @@ class ReleaseData(unittest.TestCase):
         a, b = set(self.data["v1.17.0"]["commands"]), set(self.data["v1.18.0-rc1"]["commands"])
         self.assertEqual(a - b, {"core_heater", "pm_selector_auterion"})
         self.assertIn("src/modules/commander/CMakeLists.txt", self.data["main"]["commands"]["commander"])
+
+    def test_posix_builtins_in_every_release(self):
+        # Scripts run them though no px4_add_module() declares them (DESIGN.md, P3 note).
+        for release, d in self.data.items():
+            for name in ["list_files", "list_tasks", "shutdown", "sleep"]:
+                self.assertIn("platforms/common/apps.cpp.in", d["commands"].get(name, []), (release, name))
 
     def test_parameters(self):
         rc1 = self.data["v1.18.0-rc1"]["parameters"]

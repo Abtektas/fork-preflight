@@ -56,7 +56,7 @@ target/release/fork-preflight --target v1.18.0-rc1 path/to/fork
 |---|---|---|
 | `kconfig-undefined` | `CONFIG_X=...` and `# CONFIG_X is not set` in `boards/<vendor>/<model>/<label>.px4board` | the target release does not define the symbol, globally or in that board's own Kconfig |
 | `param-removed` | the parameter of `param set`, `set-default`, `compare`, `greater`, `bitset`, `bitclear`, `find`, and the names of `touch` and `reset`, in scripts | the target release has no such parameter |
-| `command-removed` | the command word of each command in scripts | the base release declares the command (`MAIN` of `px4_add_module`) and the target does not |
+| `command-removed` | the command word of each command in scripts | the base release declares the command (`MAIN` of `px4_add_module`, or a POSIX shell builtin in `platforms/common/apps.cpp.in`) and the target does not |
 
 Scripts are the files in `ROMFS/<dir>/init.d*/`, `boards/<vendor>/<model>/init/`
 and `target/`, `platforms/nuttx/init/` and `posix-configs/`, without

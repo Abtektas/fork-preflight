@@ -15,6 +15,10 @@
   not have, with param-lineage's removal kind and successors.
 - `command-removed`: script commands that the base release declares and the
   target does not, with the declaring `CMakeLists.txt`.
+- The command data also holds the POSIX shell builtins that
+  `platforms/common/apps.cpp.in` registers (`sleep`, `list_tasks`,
+  `list_files`, `shutdown`), so a module command that becomes a builtin is
+  not reported as removed.
 - Fork definitions in Kconfig, `CMakeLists.txt`, C/C++ and YAML module
   configs count as defined. Rules without data are reported as skipped.
 - `--sarif` (SARIF 2.1.0) and a composite GitHub Action (`action.yml`).

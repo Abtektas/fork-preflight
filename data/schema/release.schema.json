@@ -95,7 +95,7 @@
   },
   "commands": {
    "type": "object",
-   "description": "Shell command names (MAIN of px4_add_module) and the CMakeLists.txt files that declare them.",
+   "description": "Shell command names (MAIN of px4_add_module, and the POSIX builtins of platforms/common/apps.cpp.in) and the files that declare them.",
    "propertyNames": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"},
    "additionalProperties": {
     "type": "array",

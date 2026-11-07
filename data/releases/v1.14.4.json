@@ -347,6 +347,12 @@
   "lis3mdl": [
    "src/drivers/magnetometer/lis3mdl/CMakeLists.txt"
   ],
+  "list_files": [
+   "platforms/common/apps.cpp.in"
+  ],
+  "list_tasks": [
+   "platforms/common/apps.cpp.in"
+  ],
   "listener": [
    "src/systemcmds/topic_listener/CMakeLists.txt"
   ],
@@ -643,6 +649,7 @@
    "src/drivers/hygrometer/sht3x/CMakeLists.txt"
   ],
   "shutdown": [
+   "platforms/common/apps.cpp.in",
    "src/systemcmds/shutdown/CMakeLists.txt"
   ],
   "simulator_mavlink": [
@@ -650,6 +657,9 @@
   ],
   "simulator_sih": [
    "src/modules/simulation/simulator_sih/CMakeLists.txt"
+  ],
+  "sleep": [
+   "platforms/common/apps.cpp.in"
   ],
   "spektrum_rc": [
    "boards/modalai/voxl2-slpi/src/drivers/spektrum_rc/CMakeLists.txt"

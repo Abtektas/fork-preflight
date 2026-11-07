@@ -8,7 +8,8 @@ local clone, and the facts come from the tree's own tools:
   environment PX4's cmake/kconfig.cmake sets, including the Zenoh topic
   catalog that cmake generates at configure time. Board Kconfig files that
   the root Kconfig sources per board add board symbols.
-- Module commands: the MAIN argument of every px4_add_module() call.
+- Commands: the MAIN argument of every px4_add_module() call, and the
+  POSIX shell builtins platforms/common/apps.cpp.in registers (sleep ...).
 - Parameters: the param-lineage snapshot of the release (names) and its
   combined history (removals with their successors), at a pinned commit.
 - Removed Kconfig symbols: every symbol the previous data release defines and
@@ -52,6 +53,9 @@ BOARD_SOURCE = 'osource "boards/$(VENDOR)/$(MODEL)/Kconfig"'
 ZENOH_CATALOG = os.path.join("src", "modules", "zenoh", "Kconfig.topics")
 MACRO = re.compile(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)")
 COMMAND = re.compile(r"^[A-Za-z0-9_]+$")
+# The POSIX shell's own commands, registered next to the module commands.
+BUILTINS = "platforms/common/apps.cpp.in"
+BUILTIN = re.compile(r'^\s*apps\["([^"]*)"\]\s*=', re.MULTILINE)
 
 
 class GenerateError(Exception):
@@ -244,7 +248,24 @@ def commands_data(tree: str) -> dict[str, list[str]]:
                     if not COMMAND.match(name):
                         raise GenerateError(f"{rel}: MAIN {name} is not a literal command name")
                     commands.setdefault(name, set()).add(rel)
+    for name in builtin_commands(tree):
+        commands.setdefault(name, set()).add(BUILTINS)
     return {name: sorted(paths) for name, paths in sorted(commands.items())}
+
+
+def builtin_commands(tree: str) -> list[str]:
+    """Names apps.cpp.in registers as builtins (`apps["sleep"] = sleep_main;`). Scripts can
+    run them although no px4_add_module() declares them; a module that becomes a builtin
+    is not a removed command."""
+    path = os.path.join(tree, *BUILTINS.split("/"))
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        names = BUILTIN.findall(f.read())
+    for name in names:
+        if not COMMAND.match(name):
+            raise GenerateError(f"{BUILTINS}: builtin {name} is not a literal command name")
+    return names
 
 
 def parameters_data(lineage: str, pin: dict, release: str) -> tuple[dict | None, list[str]]:

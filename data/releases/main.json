@@ -440,6 +440,12 @@
   "lis3mdl": [
    "src/drivers/magnetometer/lis3mdl/CMakeLists.txt"
   ],
+  "list_files": [
+   "platforms/common/apps.cpp.in"
+  ],
+  "list_tasks": [
+   "platforms/common/apps.cpp.in"
+  ],
   "listener": [
    "src/systemcmds/topic_listener/CMakeLists.txt"
   ],
@@ -823,6 +829,7 @@
    "src/drivers/hygrometer/sht3x/CMakeLists.txt"
   ],
   "shutdown": [
+   "platforms/common/apps.cpp.in",
    "src/systemcmds/shutdown/CMakeLists.txt"
   ],
   "sih_vio_bridge": [
@@ -833,6 +840,9 @@
   ],
   "simulator_sih": [
    "src/modules/simulation/simulator_sih/CMakeLists.txt"
+  ],
+  "sleep": [
+   "platforms/common/apps.cpp.in"
   ],
   "sony_asdt1": [
    "src/drivers/distance_sensor/sony/CMakeLists.txt"

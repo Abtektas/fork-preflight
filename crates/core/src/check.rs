@@ -562,7 +562,12 @@ impl Context<'_> {
             .target
             .commands
             .iter()
-            .filter(|(_, files)| files.iter().any(|f| declared_at_base.contains(f)))
+            // Only module files: apps.cpp.in declares every POSIX builtin, not a successor.
+            .filter(|(_, files)| {
+                files
+                    .iter()
+                    .any(|f| f.ends_with("CMakeLists.txt") && declared_at_base.contains(f))
+            })
             .map(|(other, _)| other.as_str())
             .collect();
         if !successors.is_empty() {
