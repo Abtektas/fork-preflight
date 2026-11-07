@@ -2,7 +2,7 @@
 //! `fork-preflight`: report the lines of a PX4 fork that name what the target release no longer defines.
 
 use clap::Parser;
-use fork_preflight_core::{check, data, git::Repo, legal};
+use fork_preflight_core::{check, data, git::Repo, legal, sarif};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -14,7 +14,7 @@ const EXIT_ERROR: u8 = 2;
     name = "fork-preflight",
     version,
     disable_version_flag = true,
-    about = "Report the lines in a PX4 fork's own files that name a Kconfig symbol the target release does not define.",
+    about = "Report the lines in a PX4 fork's own files that name a Kconfig symbol, parameter or command the target release does not define.",
     after_help = "Exit status: 0 no findings, 1 findings, 2 usage or data error.\n\
                   Reads the committed state of HEAD, not uncommitted changes."
 )]
@@ -25,12 +25,15 @@ struct Cli {
     /// Release the fork is based on [default: newest data release that HEAD contains]
     #[arg(long)]
     base: Option<String>,
-    /// Check every board file in HEAD, not only the lines the fork added or changed since the base
+    /// Check every board file and script in HEAD, not only the lines the fork added or changed since the base
     #[arg(long)]
     all_files: bool,
     /// Print the report as JSON
-    #[arg(long)]
+    #[arg(long, conflicts_with = "sarif")]
     json: bool,
+    /// Print the report as SARIF 2.1.0 (for GitHub code scanning)
+    #[arg(long)]
+    sarif: bool,
     /// List the releases the embedded data covers
     #[arg(long)]
     list_releases: bool,
@@ -92,6 +95,16 @@ fn run(cli: Cli) -> Result<u8, String> {
             "{}",
             serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?
         );
+    } else if cli.sarif {
+        let log = sarif::to_sarif(
+            &report,
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_REPOSITORY"),
+        );
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&log).map_err(|e| e.to_string())?
+        );
     } else {
         print_text(&report);
     }
@@ -108,11 +121,20 @@ fn print_text(report: &check::Report) {
             "{}:{}: {}: {}",
             finding.file, finding.line, finding.rule, finding.message
         );
-        println!("    {}", finding.text);
+        println!("    {}", finding.text.trim_start());
+        if let Some(hint) = &finding.hint {
+            println!("    hint: {hint}");
+        }
     }
     let base = report.base.as_deref().unwrap_or("none");
+    if !report.skipped.is_empty() {
+        println!("\nSkipped:");
+        for skipped in &report.skipped {
+            println!("- {skipped}");
+        }
+    }
     println!(
-        "\n{} finding(s) in {} board file(s), {} from base {base} to target {}, HEAD {}.",
+        "\n{} finding(s) in {} file(s), {} from base {base} to target {}, HEAD {}.",
         report.findings.len(),
         report.files_checked,
         report.scope,

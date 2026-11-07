@@ -3,18 +3,39 @@
 
 use crate::data::{Release, Version};
 use crate::git::{Change, Repo};
-use crate::parse::{board_assignments, board_of, kconfig_definitions};
+use crate::parse::{
+    board_assignments, board_of, cmake_main_commands, is_script, kconfig_definitions, param_uses,
+    script_commands, ParamDefinitions, ParamUse, ScriptCommand,
+};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const RULE_KCONFIG_UNDEFINED: &str = "kconfig-undefined";
+pub const RULE_PARAM_REMOVED: &str = "param-removed";
+pub const RULE_COMMAND_REMOVED: &str = "command-removed";
+
+/// Every rule, with a one-line description (also used in SARIF).
+pub const RULES: &[(&str, &str)] = &[
+    (
+        RULE_KCONFIG_UNDEFINED,
+        "A board file assigns a Kconfig symbol that the target release does not define.",
+    ),
+    (
+        RULE_PARAM_REMOVED,
+        "A script names a parameter that the target release does not have.",
+    ),
+    (
+        RULE_COMMAND_REMOVED,
+        "A script runs a command that the base release declares and the target release does not.",
+    ),
+];
 
 pub struct Options {
     /// Release the fork is based on; detected from HEAD's history when not given.
     pub base: Option<String>,
     /// Release the fork will merge.
     pub target: String,
-    /// Check every board file in HEAD instead of the files the fork changed.
+    /// Check every board file and script in HEAD instead of the files the fork changed.
     pub all_files: bool,
 }
 
@@ -25,6 +46,8 @@ pub struct Report {
     pub head: String,
     pub scope: &'static str,
     pub files_checked: usize,
+    /// Rules that could not run, and why.
+    pub skipped: Vec<String>,
     pub findings: Vec<Finding>,
 }
 
@@ -35,9 +58,11 @@ pub struct Finding {
     pub line: usize,
     pub symbol: String,
     pub text: String,
-    /// Whether the base release defines the symbol; null without a base.
+    /// Whether the base release defines the symbol; null without a base or base data.
     pub defined_at_base: Option<bool>,
     pub message: String,
+    /// What the data knows about a successor, when it knows something.
+    pub hint: Option<String>,
 }
 
 /// The newest data release whose commit HEAD contains. `main` is never chosen.
@@ -98,46 +123,159 @@ pub fn run(
         }
     }
 
-    // Which board files to read, and which of their lines.
-    let mut fork_symbols = BTreeSet::new();
+    // Which files to read, and which of their lines; definitions the fork adds.
+    let mut fork = ForkDefinitions::default();
     let mut boards: Vec<(String, Option<Vec<usize>>)> = Vec::new();
+    let mut scripts: Vec<(String, Option<Vec<usize>>)> = Vec::new();
     if let Some(base) = base {
-        for file in repo.changed_files(&base.source.commit)? {
+        let changed = repo.changed_files(&base.source.commit)?;
+        let mut added = if changed.iter().any(|f| f.change == Change::Modified) {
+            repo.added_lines(&base.source.commit)?
+        } else {
+            BTreeMap::new()
+        };
+        let mut definitions: Vec<(String, Option<Vec<usize>>)> = Vec::new();
+        for file in changed {
+            let kind = if ForkDefinitions::reads(&file.path) {
+                &mut definitions
+            } else if options.all_files {
+                continue;
+            } else if board_of(&file.path).is_some() {
+                &mut boards
+            } else if is_script(&file.path) {
+                &mut scripts
+            } else {
+                continue;
+            };
             let lines = match file.change {
                 Change::Added => None,
-                Change::Modified => Some(repo.added_lines(&base.source.commit, &file.path)?),
+                // A modified text file has hunks; one without (binary) has no lines to check.
+                Change::Modified => Some(added.remove(&file.path).unwrap_or_default()),
             };
-            if is_kconfig(&file.path) {
-                let content = repo.show_head(&file.path)?;
-                let defs = kconfig_definitions_in(&content, lines.as_deref());
-                fork_symbols.extend(defs);
-            } else if !options.all_files && board_of(&file.path).is_some() {
-                boards.push((file.path, lines));
-            }
+            kind.push((file.path, lines));
+        }
+        let paths: Vec<&str> = definitions.iter().map(|(p, _)| p.as_str()).collect();
+        for ((path, lines), content) in definitions.iter().zip(repo.show_head_many(&paths)?) {
+            fork.add_file(path, &content, lines.as_deref());
         }
     }
     if options.all_files {
-        boards = repo
-            .head_files()?
-            .into_iter()
-            .filter(|path| board_of(path).is_some())
-            .map(|path| (path, None))
-            .collect();
+        for path in repo.head_files()? {
+            if board_of(&path).is_some() {
+                boards.push((path, None));
+            } else if is_script(&path) {
+                scripts.push((path, None));
+            }
+        }
     }
 
+    let mut skipped = Vec::new();
+    if target.parameters.is_none() {
+        skipped.push(format!(
+            "{RULE_PARAM_REMOVED}: the data has no parameters for {}",
+            target.release
+        ));
+    }
+    if base.is_none() {
+        skipped.push(format!("{RULE_COMMAND_REMOVED}: needs a base release"));
+    }
+
+    let context = Context {
+        base,
+        target,
+        releases,
+        fork: &fork,
+    };
     let mut findings = Vec::new();
-    for (path, lines) in &boards {
+    let paths: Vec<&str> = boards.iter().map(|(p, _)| p.as_str()).collect();
+    for ((path, lines), content) in boards.iter().zip(repo.show_head_many(&paths)?) {
+        findings.extend(context.board_findings(path, &content, lines.as_deref()));
+    }
+    let paths: Vec<&str> = scripts.iter().map(|(p, _)| p.as_str()).collect();
+    for ((path, lines), content) in scripts.iter().zip(repo.show_head_many(&paths)?) {
+        findings.extend(context.script_findings(path, &content, lines.as_deref()));
+    }
+    findings.sort_by(|a, b| (&a.file, a.line, a.rule).cmp(&(&b.file, b.line, b.rule)));
+    Ok(Report {
+        base: base.map(|b| b.release.clone()),
+        target: target.release.clone(),
+        head: repo.head()?,
+        scope: if options.all_files {
+            "all-files"
+        } else {
+            "changed-files"
+        },
+        files_checked: boards.len() + scripts.len(),
+        skipped,
+        findings,
+    })
+}
+
+/// Kconfig symbols, commands and parameters that the fork's own added or changed files define.
+#[derive(Default)]
+struct ForkDefinitions {
+    symbols: BTreeSet<String>,
+    commands: BTreeSet<String>,
+    params: ParamDefinitions,
+}
+
+impl ForkDefinitions {
+    /// Whether a changed file can define something: Kconfig, CMakeLists.txt, C/C++ or YAML.
+    fn reads(path: &str) -> bool {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        name.starts_with("Kconfig")
+            || name == "CMakeLists.txt"
+            || name
+                .rsplit_once('.')
+                .is_some_and(|(_, ext)| matches!(ext, "c" | "cpp" | "h" | "hpp" | "yaml" | "yml"))
+    }
+
+    fn add_file(&mut self, path: &str, content: &str, lines: Option<&[usize]>) {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        if name.starts_with("Kconfig") {
+            self.symbols.extend(kconfig_definitions_in(content, lines));
+        } else if name == "CMakeLists.txt" {
+            self.commands.extend(cmake_main_commands(content, lines));
+        } else {
+            self.params.add_file(path, content, lines);
+        }
+    }
+}
+
+struct Context<'a> {
+    base: Option<&'a Release>,
+    target: &'a Release,
+    releases: &'a BTreeMap<String, Release>,
+    fork: &'a ForkDefinitions,
+}
+
+/// Whether a name is `<stem><n>` (n >= 1) of a family whose `<stem>1` the data has, such as
+/// `PWM_MAIN_FUNC9` when the data lists `PWM_MAIN_FUNC1` to `8`.
+fn is_numbered_instance(name: &str, names: &BTreeSet<String>) -> bool {
+    let stem = name.trim_end_matches(|c: char| c.is_ascii_digit());
+    let number = &name[stem.len()..];
+    !stem.is_empty()
+        && !number.is_empty()
+        && !number.starts_with('0')
+        && names.contains(&format!("{stem}1"))
+}
+
+fn wanted(lines: Option<&[usize]>, line: usize) -> bool {
+    lines.is_none_or(|lines| lines.contains(&line))
+}
+
+impl Context<'_> {
+    fn board_findings(&self, path: &str, content: &str, lines: Option<&[usize]>) -> Vec<Finding> {
+        let (base, target) = (self.base, self.target);
         let board = board_of(path);
-        let content = repo.show_head(path)?;
-        for assignment in board_assignments(&content) {
-            if lines
-                .as_ref()
-                .is_some_and(|lines| !lines.contains(&assignment.line))
-            {
+        let mut findings = Vec::new();
+        for assignment in board_assignments(content) {
+            if !wanted(lines, assignment.line) {
                 continue;
             }
             let symbol = assignment.symbol.as_str();
-            if target.defines_symbol(symbol, board.as_deref()) || fork_symbols.contains(symbol) {
+            if target.defines_symbol(symbol, board.as_deref()) || self.fork.symbols.contains(symbol)
+            {
                 continue;
             }
             let defined_at_base = base.map(|b| b.defines_symbol(symbol, board.as_deref()));
@@ -154,34 +292,161 @@ pub fn run(
             };
             findings.push(Finding {
                 rule: RULE_KCONFIG_UNDEFINED,
-                file: path.clone(),
+                file: path.to_string(),
                 line: assignment.line,
                 symbol: symbol.to_string(),
                 text: assignment.text,
                 defined_at_base,
                 message,
+                hint: None,
             });
         }
+        findings
     }
-    findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
-    Ok(Report {
-        base: base.map(|b| b.release.clone()),
-        target: target.release.clone(),
-        head: repo.head()?,
-        scope: if options.all_files {
-            "all-files"
-        } else {
-            "changed-files"
-        },
-        files_checked: boards.len(),
-        findings,
-    })
-}
 
-fn is_kconfig(path: &str) -> bool {
-    path.rsplit('/')
-        .next()
-        .is_some_and(|name| name.starts_with("Kconfig"))
+    fn script_findings(&self, path: &str, content: &str, lines: Option<&[usize]>) -> Vec<Finding> {
+        let mut findings = Vec::new();
+        for command in script_commands(content) {
+            if !wanted(lines, command.line) {
+                continue;
+            }
+            if let Some(finding) = self.command_finding(path, &command) {
+                findings.push(finding);
+            }
+            for used in param_uses(&command) {
+                if let Some(finding) = self.param_finding(path, &command, &used) {
+                    findings.push(finding);
+                }
+            }
+        }
+        findings
+    }
+
+    fn command_finding(&self, path: &str, command: &ScriptCommand) -> Option<Finding> {
+        let base = self.base?;
+        let name = command.command.as_str();
+        let declared_at_base = base.commands.get(name)?;
+        if self.target.commands.contains_key(name) || self.fork.commands.contains(name) {
+            return None;
+        }
+        let mut hint = format!(
+            "{} declares it in {}",
+            base.release,
+            declared_at_base.join(", ")
+        );
+        let successors: BTreeSet<&str> = self
+            .target
+            .commands
+            .iter()
+            .filter(|(_, files)| files.iter().any(|f| declared_at_base.contains(f)))
+            .map(|(other, _)| other.as_str())
+            .collect();
+        if !successors.is_empty() {
+            let list: Vec<&str> = successors.into_iter().collect();
+            hint.push_str(&format!(
+                "; in {} that file declares {}",
+                self.target.release,
+                list.join(", ")
+            ));
+        }
+        Some(Finding {
+            rule: RULE_COMMAND_REMOVED,
+            file: path.to_string(),
+            line: command.line,
+            symbol: name.to_string(),
+            text: command.text.clone(),
+            defined_at_base: Some(true),
+            message: format!(
+                "{name} is not a command in {}; {} has it, so its module was removed or renamed in between",
+                self.target.release, base.release
+            ),
+            hint: Some(hint),
+        })
+    }
+
+    fn param_finding(
+        &self,
+        path: &str,
+        command: &ScriptCommand,
+        used: &ParamUse,
+    ) -> Option<Finding> {
+        let target_params = self.target.parameters.as_ref()?;
+        let name = used.name.as_str();
+        if target_params.names.contains(name) || self.fork.params.contains(name) {
+            return None;
+        }
+        let defined_at_base = self
+            .base
+            .and_then(|b| b.parameters.as_ref())
+            .map(|p| p.names.contains(name));
+        if defined_at_base != Some(true) && is_numbered_instance(name, &target_params.names) {
+            // The number of instances depends on the board (output channels); the data has one count.
+            return None;
+        }
+        let target = &self.target.release;
+        let mut message = match (self.base, defined_at_base) {
+            (Some(base), Some(true)) => format!(
+                "{name} is not a parameter in {target}; {} has it, so it was removed or renamed in between",
+                base.release
+            ),
+            (Some(base), Some(false)) => format!(
+                "{name} is not in the parameter data of {target} nor of {}",
+                base.release
+            ),
+            _ => format!("{name} is not a parameter in {target}"),
+        };
+        if used.silent {
+            message.push_str(&format!(
+                " (`param {} -s` hides PX4's error for it)",
+                used.subcommand
+            ));
+        }
+        Some(Finding {
+            rule: RULE_PARAM_REMOVED,
+            file: path.to_string(),
+            line: command.line,
+            symbol: name.to_string(),
+            text: command.text.clone(),
+            defined_at_base,
+            message,
+            hint: self.removal_hint(name),
+        })
+    }
+
+    /// What param-lineage says about the latest removal of a parameter after the base, up to the target.
+    fn removal_hint(&self, name: &str) -> Option<String> {
+        let low = self.base.map(|b| Version::parse(&b.release));
+        let high = Version::parse(&self.target.release);
+        let mut in_range: Vec<&Release> = self
+            .releases
+            .values()
+            .filter(|r| {
+                let v = Version::parse(&r.release);
+                v <= high && low.as_ref().is_none_or(|low| v > *low)
+            })
+            .collect();
+        in_range.sort_by_key(|r| Version::parse(&r.release));
+        let (release, removal) = in_range.iter().rev().find_map(|r| {
+            r.parameters
+                .as_ref()
+                .and_then(|p| p.removed.get(name))
+                .map(|removal| (r.release.as_str(), removal))
+        })?;
+        let mut hint = format!("param-lineage: removed in {release}");
+        if let Some(kind) = &removal.kind {
+            hint.push_str(&format!(" ({kind}"));
+            match kind.as_str() {
+                "migrated" => hint.push_str(", PX4 converts a stored value"),
+                "renamed" => hint.push_str(", PX4 does not convert a stored value"),
+                _ => {}
+            }
+            hint.push(')');
+        }
+        if !removal.successors.is_empty() {
+            hint.push_str(&format!("; successors: {}", removal.successors.join(", ")));
+        }
+        Some(hint)
+    }
 }
 
 /// Definitions in a Kconfig file, limited to the given lines when there are any.

@@ -110,7 +110,16 @@ fn px4_main_assigns_eight_undefined_symbols() {
             "UXRCE_DDS_CLIENT_SERIAL"
         ]
     );
-    assert_eq!(report["files_checked"], 322);
+    assert!(findings.iter().all(|f| f["rule"] == "kconfig-undefined"));
+    // 322 board files and 502 scripts; no base, and main has no parameter data.
+    assert_eq!(report["files_checked"], 824);
+    assert_eq!(
+        report["skipped"],
+        serde_json::json!([
+            "param-removed: the data has no parameters for main",
+            "command-removed: needs a base release"
+        ])
+    );
     assert!(report["notice"]
         .as_str()
         .unwrap()
@@ -148,13 +157,204 @@ fn px4_v1_17_to_v1_18_rc1() {
     ]);
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(report["base"], "v1.17.0");
-    let removed: Vec<&str> = report["findings"]
+    let removed = removed_at(&report);
+    // Only the symbol v1.18.0-rc1 removed that boards assign; COMMON_GPIO is not assigned by any board.
+    assert_eq!(
+        removed["kconfig-undefined"],
+        [("DRIVERS_POWER_MONITOR_PM_SELECTOR_AUTERION".to_string(), 9)].into()
+    );
+    // The 11 removed parameters that v1.17.0's own scripts still set (commented lines do not count).
+    let params: std::collections::BTreeMap<String, usize> = [
+        ("COM_ARM_SDCARD", 3),
+        ("COM_OBC_LOSS_T", 1),
+        ("EKF2_GPS_DELAY", 7),
+        ("EKF2_GPS_POS_X", 4),
+        ("EKF2_GPS_POS_Z", 3),
+        ("FD_ACT_MOT_TOUT", 3),
+        ("FD_ESCS_EN", 4),
+        ("MNT_RANGE_PITCH", 1),
+        ("SENS_IMU_TEMP", 4),
+        ("SENS_TEMP_ID", 11),
+        ("SIM_BAT_ENABLE", 1),
+    ]
+    .into_iter()
+    .map(|(n, c)| (n.to_string(), c))
+    .collect();
+    assert_eq!(removed["param-removed"], params);
+    assert_eq!(
+        removed["command-removed"],
+        [
+            ("core_heater".to_string(), 1),
+            ("pm_selector_auterion".to_string(), 2)
+        ]
+        .into()
+    );
+    let finding = |symbol: &str| {
+        report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["symbol"] == symbol)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        finding("SENS_TEMP_ID")["hint"],
+        "param-lineage: removed in v1.18.0-rc1 (renamed, PX4 does not convert a stored value); successors: HEATER1_SENS_ID"
+    );
+    assert_eq!(
+        finding("core_heater")["hint"],
+        "v1.17.0 declares it in boards/cuav/x25-evo/core_heater/CMakeLists.txt"
+    );
+    // PWM_MAIN_FUNC9 to 11 (SITL has 16 outputs, the data 8) are numbered instances, not findings.
+    assert!(report["findings"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|f| f["defined_at_base"] == true)
-        .map(|f| f["symbol"].as_str().unwrap())
+        .all(|f| !f["symbol"].as_str().unwrap().starts_with("PWM_MAIN_FUNC")));
+}
+
+/// Count of findings per rule and symbol whose symbol the base release defines.
+fn removed_at(
+    report: &serde_json::Value,
+) -> std::collections::BTreeMap<String, std::collections::BTreeMap<String, usize>> {
+    let mut map: std::collections::BTreeMap<String, std::collections::BTreeMap<String, usize>> =
+        ["kconfig-undefined", "param-removed", "command-removed"]
+            .into_iter()
+            .map(|r| (r.to_string(), Default::default()))
+            .collect();
+    for f in report["findings"].as_array().unwrap() {
+        if f["defined_at_base"] == true {
+            *map.get_mut(f["rule"].as_str().unwrap())
+                .unwrap()
+                .entry(f["symbol"].as_str().unwrap().to_string())
+                .or_default() += 1;
+        }
+    }
+    map
+}
+
+#[test]
+fn px4_rc1_and_main_still_set_parameters_rc1_removed() {
+    // Lines in PX4's own scripts at v1.18.0-rc1 and main (95a0c23482) that set parameters
+    // v1.18.0-rc1 removed. No script there runs a command that v1.17.0 has and they lack.
+    for (rev, target) in [
+        ("v1.18.0-rc1", "v1.18.0-rc1"),
+        ("95a0c23482329183d932ac99da00faa7e8d63143", "main"),
+    ] {
+        let Some(dir) = px4_clone_at(rev) else {
+            eprintln!("skipped: FORK_PREFLIGHT_PX4 not set");
+            return;
+        };
+        let out = run(&[
+            "--base",
+            "v1.17.0",
+            "--target",
+            target,
+            "--all-files",
+            "--json",
+            dir.path().to_str().unwrap(),
+        ]);
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let removed = removed_at(&report);
+        assert!(removed["command-removed"].is_empty(), "{rev}");
+        if target == "main" {
+            assert!(report["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|f| f["rule"] == "kconfig-undefined"));
+            continue;
+        }
+        assert_eq!(
+            removed["param-removed"],
+            [
+                ("COM_ARM_SDCARD".to_string(), 1),
+                ("FD_ACT_MOT_TOUT".to_string(), 3),
+                ("MPC_LAND_RC_HELP".to_string(), 2)
+            ]
+            .into(),
+            "{rev}"
+        );
+    }
+}
+
+#[test]
+fn sarif_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    let git = |args: &[&str]| {
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "commit.gpgsign=false"
+            ])
+            .args(args)
+            .status()
+            .unwrap()
+            .success());
+    };
+    git(&["init", "-q"]);
+    let board = path.join("boards/acme/x1");
+    std::fs::create_dir_all(&board).unwrap();
+    std::fs::write(board.join("default.px4board"), "CONFIG_NOT_A_SYMBOL=y\n").unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "fork"]);
+    let out = run(&[
+        "--target",
+        "main",
+        "--all-files",
+        "--sarif",
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let log: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(log["version"], "2.1.0");
+    let run = &log["runs"][0];
+    assert_eq!(run["tool"]["driver"]["name"], "fork-preflight");
+    let rules: Vec<&str> = run["tool"]["driver"]["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
         .collect();
-    // Only the symbol v1.18.0-rc1 removed that boards assign; COMMON_GPIO is not assigned by any board.
-    assert_eq!(removed, ["DRIVERS_POWER_MONITOR_PM_SELECTOR_AUTERION"; 9]);
+    assert_eq!(
+        rules,
+        ["kconfig-undefined", "param-removed", "command-removed"]
+    );
+    let results = run["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["ruleId"], "kconfig-undefined");
+    assert_eq!(results[0]["ruleIndex"], 0);
+    let location = &results[0]["locations"][0]["physicalLocation"];
+    assert_eq!(
+        location["artifactLocation"]["uri"],
+        "boards/acme/x1/default.px4board"
+    );
+    assert_eq!(location["region"]["startLine"], 1);
+    assert!(run["properties"]["notice"]
+        .as_str()
+        .unwrap()
+        .contains("accept no liability"));
+    assert_eq!(
+        run["invocations"][0]["toolExecutionNotifications"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let both = run_args_conflict();
+    assert_eq!(both, Some(2));
+}
+
+fn run_args_conflict() -> Option<i32> {
+    run(&["--target", "main", "--json", "--sarif"])
+        .status
+        .code()
 }

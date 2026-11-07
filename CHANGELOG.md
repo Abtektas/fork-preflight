@@ -11,3 +11,10 @@
   file lines whose Kconfig symbol the target release does not define, limited
   to what the fork added or changed since its base release (`--all-files`
   for every board file). Text and JSON output; the release data is built in.
+- `param-removed`: script lines that name a parameter the target release does
+  not have, with param-lineage's removal kind and successors.
+- `command-removed`: script commands that the base release declares and the
+  target does not, with the declaring `CMakeLists.txt`.
+- Fork definitions in Kconfig, `CMakeLists.txt`, C/C++ and YAML module
+  configs count as defined. Rules without data are reported as skipped.
+- `--sarif` (SARIF 2.1.0) and a composite GitHub Action (`action.yml`).

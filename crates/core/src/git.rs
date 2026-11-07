@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //! The git queries the scanner needs, run with the `git` command.
 
+use std::collections::BTreeMap;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 pub struct Repo {
     path: PathBuf,
@@ -37,6 +39,7 @@ impl Repo {
         let out = Command::new("git")
             .arg("-C")
             .arg(&self.path)
+            .args(["-c", "core.quotePath=false"])
             .args(args)
             .output()
             .map_err(|e| format!("cannot run git: {e}"))?;
@@ -106,20 +109,106 @@ impl Repo {
         self.run(&["show", &format!("HEAD:{path}")])
     }
 
-    /// Line numbers (1-based, in HEAD) of the lines that HEAD added or changed in `path` since `base`.
-    pub fn added_lines(&self, base: &str, path: &str) -> Result<Vec<usize>, String> {
+    /// Line numbers (1-based, in HEAD) of the lines that HEAD added or changed since `base`, per file.
+    pub fn added_lines(&self, base: &str) -> Result<BTreeMap<String, Vec<usize>>, String> {
         let out = self.run(&[
             "diff",
             "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
             "-U0",
             "--no-color",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
             base,
             "HEAD",
-            "--",
-            path,
         ])?;
-        added_lines_from_diff(&out)
+        added_lines_by_file(&out)
     }
+
+    /// The contents of several files in HEAD, read with one `git cat-file --batch`.
+    pub fn show_head_many(&self, paths: &[&str]) -> Result<Vec<String>, String> {
+        let mut child = Command::new("git")
+            .arg("-C")
+            .arg(&self.path)
+            .args(["cat-file", "--batch"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("cannot run git: {e}"))?;
+        let mut request = String::new();
+        for path in paths {
+            if path.contains('\n') {
+                return Err(format!("file name with a newline: {path:?}"));
+            }
+            request.push_str(&format!("HEAD:{path}\n"));
+        }
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        let writer = std::thread::spawn(move || stdin.write_all(request.as_bytes()));
+        let mut out = Vec::new();
+        child
+            .stdout
+            .take()
+            .expect("piped stdout")
+            .read_to_end(&mut out)
+            .map_err(|e| format!("git cat-file: {e}"))?;
+        writer
+            .join()
+            .map_err(|_| "git cat-file: writer failed".to_string())?
+            .map_err(|e| format!("git cat-file: {e}"))?;
+        let status = child.wait().map_err(|e| format!("git cat-file: {e}"))?;
+        if !status.success() {
+            return Err("git cat-file --batch failed".into());
+        }
+        let mut contents = Vec::with_capacity(paths.len());
+        let mut rest = out.as_slice();
+        for path in paths {
+            let end = rest
+                .iter()
+                .position(|b| *b == b'\n')
+                .ok_or_else(|| "git cat-file: truncated output".to_string())?;
+            let header = String::from_utf8_lossy(&rest[..end]).to_string();
+            rest = &rest[end + 1..];
+            let size: usize = match header.rsplit(' ').next().map(str::parse) {
+                Some(Ok(size)) if header.split(' ').nth(1) == Some("blob") => size,
+                _ => return Err(format!("git cat-file HEAD:{path}: {header}")),
+            };
+            if rest.len() < size + 1 {
+                return Err("git cat-file: truncated output".into());
+            }
+            contents.push(String::from_utf8_lossy(&rest[..size]).into_owned());
+            rest = &rest[size + 1..];
+        }
+        Ok(contents)
+    }
+}
+
+/// The new-side line numbers of `+` lines in a unified diff with zero context, per file
+/// (the `b/` path of each `diff --git` header).
+pub fn added_lines_by_file(diff: &str) -> Result<BTreeMap<String, Vec<usize>>, String> {
+    let mut files = BTreeMap::new();
+    let mut chunks: Vec<(String, String)> = Vec::new();
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("diff --git ") {
+            chunks.push((String::new(), String::new()));
+        }
+        let Some((path, text)) = chunks.last_mut() else {
+            continue;
+        };
+        if let Some(name) = line.strip_prefix("+++ b/") {
+            if path.is_empty() {
+                *path = name.trim_end_matches('\n').to_string();
+            }
+        }
+        text.push_str(line);
+    }
+    for (path, text) in chunks {
+        if !path.is_empty() {
+            files.insert(path, added_lines_from_diff(&text)?);
+        }
+    }
+    Ok(files)
 }
 
 /// Parse the new-side line numbers of `+` lines in a unified diff with zero context.
@@ -159,5 +248,10 @@ mod tests {
     fn hunk_parsing() {
         let diff = "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -3 +3 @@\n-old\n+new\n@@ -10,0 +11,2 @@\n+a\n+++b\n@@ -20,2 +22,0 @@\n-gone\n-gone\n";
         assert_eq!(added_lines_from_diff(diff).unwrap(), vec![3, 11, 12]);
+        let two =
+            format!("{diff}diff --git a/g b/g\n--- a/g\n+++ b/g\n@@ -1 +1,2 @@\n-x\n+y\n+z\n");
+        let by_file = added_lines_by_file(&two).unwrap();
+        assert_eq!(by_file["f"], vec![3, 11, 12]);
+        assert_eq!(by_file["g"], vec![1, 2]);
     }
 }

@@ -17,6 +17,24 @@ pub struct Release {
     pub source: Source,
     pub kconfig: Kconfig,
     pub commands: BTreeMap<String, Vec<String>>,
+    /// Null when param-lineage has no snapshot of the release.
+    #[serde(default)]
+    pub parameters: Option<Parameters>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Parameters {
+    pub names: BTreeSet<String>,
+    /// Parameters this release removed, with param-lineage's curated kind and successors.
+    pub removed: BTreeMap<String, Removal>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Removal {
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub successors: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

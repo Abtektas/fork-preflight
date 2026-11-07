@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: BSD-3-Clause
+name: fork-preflight
+description: Report the lines of a PX4 fork that name a Kconfig symbol, parameter or command the target release does not define.
+author: the fork-preflight contributors
+branding:
+  icon: check-square
+  color: gray-dark
+
+inputs:
+  target:
+    description: Release the fork will merge (see `fork-preflight --list-releases`).
+    required: true
+  base:
+    description: Release the fork is based on. Empty means the newest release in the data that HEAD contains.
+    required: false
+    default: ""
+  path:
+    description: Repository to check. It needs the history back to the base release (actions/checkout with fetch-depth 0).
+    required: false
+    default: "."
+  all-files:
+    description: "true: check every board file and script in HEAD, not only what the fork added or changed since the base."
+    required: false
+    default: "false"
+  sarif-file:
+    description: Where to write the SARIF report (for github/codeql-action/upload-sarif).
+    required: false
+    default: fork-preflight.sarif
+  fail-on-findings:
+    description: "true: fail the step when there are findings. Errors always fail it."
+    required: false
+    default: "true"
+
+outputs:
+  exit-code:
+    description: "fork-preflight's exit status: 0 no findings, 1 findings, 2 usage or data error."
+    value: ${{ steps.run.outputs.exit-code }}
+  sarif-file:
+    description: Path of the SARIF report.
+    value: ${{ steps.run.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build fork-preflight
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        CARGO_TARGET_DIR: ${{ runner.temp }}/fork-preflight-target
+      # rustup installs the toolchain that rust-toolchain.toml pins.
+      run: cargo build --release --locked -p fork-preflight
+    - name: Run fork-preflight
+      id: run
+      shell: bash
+      env:
+        FP_BIN: ${{ runner.temp }}/fork-preflight-target/release/fork-preflight
+        FP_TARGET: ${{ inputs.target }}
+        FP_BASE: ${{ inputs.base }}
+        FP_PATH: ${{ inputs.path }}
+        FP_ALL_FILES: ${{ inputs.all-files }}
+        FP_SARIF_FILE: ${{ inputs.sarif-file }}
+        FP_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+      run: '"$GITHUB_ACTION_PATH/action/run.sh"'

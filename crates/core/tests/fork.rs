@@ -59,6 +59,7 @@ fn release(
             "board_symbols": boards.iter().map(|(b, s)| (b.to_string(), s.to_vec())).collect::<BTreeMap<_, _>>(),
         },
         "commands": {},
+        "parameters": null,
     });
     (name.to_string(), serde_json::from_value(value).unwrap())
 }
@@ -282,4 +283,215 @@ impl Fork {
     fn repo_path(&self) -> std::path::PathBuf {
         self._dir.path().to_path_buf()
     }
+}
+
+/// A removed parameter: (name, kind, successors).
+type Removed<'a> = (&'a str, &'a str, &'a [&'a str]);
+
+/// A release with commands and parameters (names, removed).
+fn release_with(
+    name: &str,
+    commit: &str,
+    commands: &[(&str, &str)],
+    params: Option<(&[&str], &[Removed])>,
+) -> (String, Release) {
+    let parameters = params.map(|(names, removed)| {
+        serde_json::json!({
+            "names": names,
+            "removed": removed
+                .iter()
+                .map(|(n, kind, successors)| {
+                    (n.to_string(), serde_json::json!({"kind": kind, "successors": successors}))
+                })
+                .collect::<BTreeMap<_, _>>(),
+        })
+    });
+    let value = serde_json::json!({
+        "format": 1,
+        "release": name,
+        "source": {"commit": commit},
+        "kconfig": {"symbols": [], "board_symbols": {}},
+        "commands": commands
+            .iter()
+            .map(|(c, file)| (c.to_string(), vec![file.to_string()]))
+            .collect::<BTreeMap<_, _>>(),
+        "parameters": parameters,
+    });
+    (name.to_string(), serde_json::from_value(value).unwrap())
+}
+
+/// Base: upstream rcS and a heater module. Fork: adds lines to rcS, an airframe and its own module.
+fn script_fork() -> Fork {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    git(path, &["init", "-q"]);
+    write(
+        path,
+        "ROMFS/px4fmu_common/init.d/rcS",
+        "param set-default OLD_UP 1\nheater start\n",
+    );
+    let base = commit(path, "upstream release");
+    write(
+        path,
+        "ROMFS/px4fmu_common/init.d/rcS",
+        "param set-default OLD_UP 1\nheater start\nif param compare -s GONE_P 1\nthen\n\tacme_cmd start\nfi\necho done\n",
+    );
+    write(
+        path,
+        "ROMFS/px4fmu_common/init.d/airframes/9001_acme",
+        "# param set-default GONE_P 2\nparam set-default GONE_P 2\nparam set-default ACME_EN 1\nparam set-default ACME_2_ID 7\nparam set-default TYPO_P 1\nparam set-default PWM_MAIN_FUNC9 101\nparam set-default KEPT_P 3\nheater stop\n",
+    );
+    write(
+        path,
+        "src/drivers/acme/CMakeLists.txt",
+        "px4_add_module(\n\tMODULE drivers__acme\n\tMAIN acme_cmd\n)\n",
+    );
+    write(
+        path,
+        "src/drivers/acme/acme_params.c",
+        "PARAM_DEFINE_INT32(ACME_EN, 0);\n",
+    );
+    write(
+        path,
+        "src/drivers/acme/module.yaml",
+        "parameters:\n  - definitions:\n      ACME_${i}_ID:\n        num_instances: 3\n",
+    );
+    commit(path, "fork work");
+    let repo = Repo::open(path).unwrap();
+    Fork {
+        _dir: dir,
+        repo,
+        base,
+    }
+}
+
+fn script_releases(base: &str, target_params: bool) -> BTreeMap<String, Release> {
+    let target_names: &[&str] = &["OLD_UP", "KEPT_P", "NEW_P", "PWM_MAIN_FUNC1"];
+    let removed: &[Removed] = &[("GONE_P", "renamed", &["NEW_P"])];
+    [
+        release_with(
+            "v1.0.0",
+            base,
+            &[("heater", "src/drivers/heater/CMakeLists.txt")],
+            Some((&["OLD_UP", "KEPT_P", "GONE_P", "PWM_MAIN_FUNC1"], &[])),
+        ),
+        release_with(
+            "v1.1.0",
+            "0000000000000000000000000000000000000000",
+            &[("heater2", "src/drivers/heater/CMakeLists.txt")],
+            target_params.then_some((target_names, removed)),
+        ),
+    ]
+    .into_iter()
+    .collect()
+}
+
+fn rule_summary(findings: &[Finding]) -> Vec<(&'static str, String, usize, String, Option<bool>)> {
+    findings
+        .iter()
+        .map(|f| {
+            (
+                f.rule,
+                f.file.clone(),
+                f.line,
+                f.symbol.clone(),
+                f.defined_at_base,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn scripts_parameters_and_commands() {
+    let f = script_fork();
+    let options = Options {
+        base: None,
+        target: "v1.1.0".into(),
+        all_files: false,
+    };
+    let report = check::run(&f.repo, &script_releases(&f.base, true), &options).unwrap();
+    assert!(report.skipped.is_empty());
+    assert_eq!(report.files_checked, 2);
+    let airframe = "ROMFS/px4fmu_common/init.d/airframes/9001_acme".to_string();
+    let rcs = "ROMFS/px4fmu_common/init.d/rcS".to_string();
+    assert_eq!(
+        rule_summary(&report.findings),
+        vec![
+            (
+                "param-removed",
+                airframe.clone(),
+                2,
+                "GONE_P".into(),
+                Some(true)
+            ),
+            (
+                "param-removed",
+                airframe.clone(),
+                5,
+                "TYPO_P".into(),
+                Some(false)
+            ),
+            (
+                "command-removed",
+                airframe.clone(),
+                8,
+                "heater".into(),
+                Some(true)
+            ),
+            // Line 2 of rcS (`heater start`) is upstream's own and not reported.
+            ("param-removed", rcs.clone(), 3, "GONE_P".into(), Some(true)),
+        ]
+    );
+    let gone = &report.findings[0];
+    assert_eq!(
+        gone.hint.as_deref(),
+        Some("param-lineage: removed in v1.1.0 (renamed, PX4 does not convert a stored value); successors: NEW_P")
+    );
+    assert!(report.findings[3]
+        .message
+        .contains("`param compare -s` hides"));
+    assert_eq!(
+        report.findings[2].hint.as_deref(),
+        Some("v1.0.0 declares it in src/drivers/heater/CMakeLists.txt; in v1.1.0 that file declares heater2")
+    );
+}
+
+#[test]
+fn rules_without_their_data_are_skipped() {
+    let f = script_fork();
+    let report = check::run(
+        &f.repo,
+        &script_releases(&f.base, false),
+        &Options {
+            base: None,
+            target: "v1.1.0".into(),
+            all_files: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        report.skipped,
+        ["param-removed: the data has no parameters for v1.1.0"]
+    );
+    assert!(report.findings.iter().all(|f| f.rule == "command-removed"));
+    let mut data = script_releases(&f.base, true);
+    data.remove("v1.0.0");
+    let report = check::run(
+        &f.repo,
+        &data,
+        &Options {
+            base: None,
+            target: "v1.1.0".into(),
+            all_files: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(report.skipped, ["command-removed: needs a base release"]);
+    // Without a base, the fork's own definitions are unknown, so ACME_EN counts as a finding.
+    let symbols: Vec<&str> = report.findings.iter().map(|f| f.symbol.as_str()).collect();
+    assert_eq!(
+        symbols,
+        ["GONE_P", "ACME_EN", "ACME_2_ID", "TYPO_P", "GONE_P"]
+    );
+    assert!(report.findings.iter().all(|f| f.defined_at_base.is_none()));
 }

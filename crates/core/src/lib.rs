@@ -6,3 +6,4 @@ pub mod data;
 pub mod git;
 pub mod legal;
 pub mod parse;
+pub mod sarif;
