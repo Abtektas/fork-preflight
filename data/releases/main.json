@@ -1013,7 +1013,7 @@
    "src/drivers/imu/murata/zeroone_sch16t/CMakeLists.txt"
   ]
  },
- "format": 1,
+ "format": 2,
  "kconfig": {
   "board_symbols": {
    "nxp/mr-navq95": [
@@ -1027,6 +1027,179 @@
   "generated": [
    "src/modules/zenoh/Kconfig.topics"
   ],
+  "removed": {
+   "previous": "v1.18.0-rc1",
+   "symbols": {
+    "BOARD_UAVCAN_PERIPHERALS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "e0dc50d7cc25afce0b1da9c6017fbc1ba0247b00",
+       "subject": "build(uavcan)!: stop embedding CAN node firmware in flight controller builds"
+      }
+     ],
+     "successors": []
+    },
+    "BOARD_UAVCAN_TIMER_OVERRIDE": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "3f6fe0e40c0636c6df3f5f549be328c84b4b82ad",
+       "subject": "refactor(uavcan): base the libuavcan clock on HRT instead of a dedicated timer (#28569)"
+      }
+     ],
+     "successors": []
+    },
+    "NUM_MISSION_ITMES_SUPPORTED": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "147632131528aa0ba8c19c4b1a1cc2e63f02b190",
+       "subject": "fix(dataman): correct mission items Kconfig name (#28478)"
+      }
+     ],
+     "successors": [
+      "NUM_MISSION_ITEMS_SUPPORTED"
+     ]
+    },
+    "ZENOH_PUBSUB_ESTIMATOR_GPS_STATUS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "4ad48205df7026d206a914c8a23f88b43813aa09",
+       "subject": "feat(gnss): check each receiver and carry the result on the sample (#28520)"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_GPS_INJECT_DATA": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "5d8874cd2b4b64e892779be20625411d8d88a22d",
+       "subject": "fix(gps): split RTCM corrections and moving-baseline uORB topics (#27097)"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_ATTITUDE_SETPOINT": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "ec454b9a9b19ce4c0a19640435be43346271da87",
+       "subject": "feat(msg): rename shared rover topics to surface_vehicle_* (#29524)"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_SURFACE_VEHICLE_ATTITUDE_SETPOINT"
+     ]
+    },
+    "ZENOH_PUBSUB_ROVER_ATTITUDE_STATUS": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "ec454b9a9b19ce4c0a19640435be43346271da87",
+       "subject": "feat(msg): rename shared rover topics to surface_vehicle_* (#29524)"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_SURFACE_VEHICLE_ATTITUDE_STATUS"
+     ]
+    },
+    "ZENOH_PUBSUB_ROVER_POSITION_SETPOINT": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "ec454b9a9b19ce4c0a19640435be43346271da87",
+       "subject": "feat(msg): rename shared rover topics to surface_vehicle_* (#29524)"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_SURFACE_VEHICLE_POSITION_SETPOINT"
+     ]
+    },
+    "ZENOH_PUBSUB_ROVER_RATE_SETPOINT": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "ec454b9a9b19ce4c0a19640435be43346271da87",
+       "subject": "feat(msg): rename shared rover topics to surface_vehicle_* (#29524)"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_SURFACE_VEHICLE_RATE_SETPOINT"
+     ]
+    },
+    "ZENOH_PUBSUB_ROVER_RATE_STATUS": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "ec454b9a9b19ce4c0a19640435be43346271da87",
+       "subject": "feat(msg): rename shared rover topics to surface_vehicle_* (#29524)"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_SURFACE_VEHICLE_RATE_STATUS"
+     ]
+    },
+    "ZENOH_PUBSUB_ROVER_SPEED_SETPOINT": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "ec454b9a9b19ce4c0a19640435be43346271da87",
+       "subject": "feat(msg): rename shared rover topics to surface_vehicle_* (#29524)"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_SURFACE_VEHICLE_SPEED_SETPOINT"
+     ]
+    },
+    "ZENOH_PUBSUB_ROVER_SPEED_STATUS": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "ec454b9a9b19ce4c0a19640435be43346271da87",
+       "subject": "feat(msg): rename shared rover topics to surface_vehicle_* (#29524)"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_SURFACE_VEHICLE_SPEED_STATUS"
+     ]
+    },
+    "ZENOH_PUBSUB_ROVER_STEERING_SETPOINT": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "ec454b9a9b19ce4c0a19640435be43346271da87",
+       "subject": "feat(msg): rename shared rover topics to surface_vehicle_* (#29524)"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_SURFACE_VEHICLE_STEERING_SETPOINT"
+     ]
+    },
+    "ZENOH_PUBSUB_SENSOR_GPS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "e40501eba0f9d42be7da16d1a8b94aec2973621f",
+       "subject": "refactor(msg): rename GPS to GNSS in messages, topics and sensor parameters (#24399)"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_VEHICLE_ANGULAR_ACCELERATION_SETPOINT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "f0fa73bf8dcf12fc79d6d769fa08c69f12b05a0e",
+       "subject": "chore(msg): remove unused VehicleAngularAccelerationSetpoint.msg"
+      }
+     ],
+     "successors": []
+    }
+   }
+  },
   "symbols": [
    "ARCH_CHIP_IMXRT",
    "ARCH_CHIP_RP2040",
@@ -1989,6 +2162,7 @@
  },
  "tools": {
   "empy": "3.3.4",
+  "git": "2.56.0",
   "kconfiglib": "14.1.0",
   "pyros-genmsg": "0.5.8"
  }

@@ -206,12 +206,66 @@ fn px4_v1_17_to_v1_18_rc1() {
         finding("core_heater")["hint"],
         "v1.17.0 declares it in boards/cuav/x25-evo/core_heater/CMakeLists.txt"
     );
+    assert_eq!(
+        finding("DRIVERS_POWER_MONITOR_PM_SELECTOR_AUTERION")["hint"],
+        "removed in v1.18.0-rc1 by 4ac7853479 (auterion autostarter: Added autostart for PWM_EXPANDER, generalized c\u{2026} (#25925))"
+    );
     // PWM_MAIN_FUNC9 to 11 (SITL has 16 outputs, the data 8) are numbered instances, not findings.
     assert!(report["findings"]
         .as_array()
         .unwrap()
         .iter()
         .all(|f| !f["symbol"].as_str().unwrap().starts_with("PWM_MAIN_FUNC")));
+}
+
+#[test]
+fn px4_v1_16_2_to_main_kconfig_hints() {
+    let Some(dir) = px4_clone_at("v1.16.2") else {
+        eprintln!("skipped: FORK_PREFLIGHT_PX4 not set");
+        return;
+    };
+    let out = run(&[
+        "--target",
+        "main",
+        "--all-files",
+        "--json",
+        dir.path().to_str().unwrap(),
+    ]);
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let hint = |symbol: &str| {
+        report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["symbol"] == symbol && f["rule"] == "kconfig-undefined")
+            .unwrap()["hint"]
+            .clone()
+    };
+    assert_eq!(
+        hint("MODULES_FW_POS_CONTROL"),
+        "removed in v1.17.0 by 8c1f7ec7c0 (rename FWPositionController to FWModeManager); in-tree boards set MODULES_FW_LATERAL_LONGITUDINAL_CONTROL (61/64) and MODULES_FW_MODE_MANAGER (79/79) instead"
+    );
+    assert_eq!(
+        hint("NUM_MISSION_ITMES_SUPPORTED"),
+        "removed in main by 1476321315 (fix(dataman): correct mission items Kconfig name (#28478)); renamed to NUM_MISSION_ITEMS_SUPPORTED"
+    );
+    assert_eq!(
+        hint("MODULES_ROVER_POS_CONTROL"),
+        "removed in v1.17.0 by e266d1f22f (rover: remove deprecated module)"
+    );
+    let removed = removed_at(&report);
+    let symbols: Vec<&String> = removed["kconfig-undefined"].keys().collect();
+    assert_eq!(
+        symbols,
+        [
+            "BOARD_UAVCAN_PERIPHERALS",
+            "BOARD_UAVCAN_TIMER_OVERRIDE",
+            "DRIVERS_POWER_MONITOR_PM_SELECTOR_AUTERION",
+            "MODULES_FW_POS_CONTROL",
+            "MODULES_ROVER_POS_CONTROL",
+            "NUM_MISSION_ITMES_SUPPORTED"
+        ]
+    );
 }
 
 /// Count of findings per rule and symbol whose symbol the base release defines.

@@ -28,3 +28,9 @@
 - A finding whose name only upstream lines of a fork-modified file define
   gets a hint naming that file (found on a fork that extends a module the
   target release removes).
+- Data format 2: `kconfig.removed` records the Kconfig symbols each release
+  removed, the PX4 commits that removed them and the successors that PX4's
+  git history shows (renamed, set by in-tree boards instead, or selected).
+  `kconfig-undefined` findings for a symbol the base defined carry this as a
+  hint, following successors to the target. The generator needs a full PX4
+  clone and records the git version.

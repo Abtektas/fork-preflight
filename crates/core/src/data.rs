@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 include!(concat!(env!("OUT_DIR"), "/releases.rs"));
 
 /// The data layout this build reads (`format` in the files).
-pub const FORMAT: u32 = 1;
+pub const FORMAT: u32 = 2;
 
 #[derive(Debug, Deserialize)]
 pub struct Release {
@@ -46,6 +46,41 @@ pub struct Source {
 pub struct Kconfig {
     pub symbols: BTreeSet<String>,
     pub board_symbols: BTreeMap<String, BTreeSet<String>>,
+    /// Global symbols the previous data release defines and this one does not; null for the first.
+    #[serde(default)]
+    pub removed: Option<KconfigRemoved>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct KconfigRemoved {
+    pub previous: String,
+    pub symbols: BTreeMap<String, KconfigRemoval>,
+}
+
+/// What PX4's git history between two data releases shows about one removed symbol.
+#[derive(Debug, Clone, Deserialize)]
+pub struct KconfigRemoval {
+    pub removed_by: Vec<Commit>,
+    /// `renamed`, `boards` or `selected`; null when the history shows no successor.
+    pub evidence: Option<String>,
+    pub successors: Vec<String>,
+    #[serde(default)]
+    pub via: Vec<String>,
+    #[serde(default)]
+    pub boards: BTreeMap<String, BoardCount>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Commit {
+    pub commit: String,
+    pub subject: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BoardCount {
+    pub boards: u32,
+    pub of: u32,
+    pub how: String,
 }
 
 impl Release {

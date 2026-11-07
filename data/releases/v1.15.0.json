@@ -832,10 +832,119 @@
    "src/modules/zenoh/CMakeLists.txt"
   ]
  },
- "format": 1,
+ "format": 2,
  "kconfig": {
   "board_symbols": {},
   "generated": [],
+  "removed": {
+   "previous": "v1.14.4",
+   "symbols": {
+    "DRIVERS_ACTUATORS_MODAL_IO": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "2b69a3d290aa92af76e5a5ffe49fe61b4b204184",
+       "subject": "VOXL2 specific drivers, modules, and miscellaneous support files (#22588)"
+      }
+     ],
+     "successors": [
+      "DRIVERS_ACTUATORS_VOXL_ESC"
+     ]
+    },
+    "DRIVERS_BAROMETER_INVENSENSE_ICP10100": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "461b146ba8bea4ec3da70d2eb85734272852f93c",
+       "subject": "drivers: barometer: ms5837 fix compilation error"
+      }
+     ],
+     "successors": []
+    },
+    "DRIVERS_BAROMETER_INVENSENSE_ICP10111": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "461b146ba8bea4ec3da70d2eb85734272852f93c",
+       "subject": "drivers: barometer: ms5837 fix compilation error"
+      }
+     ],
+     "successors": []
+    },
+    "DRIVERS_IMU_ADIS16477": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "51e1a80556f8bcd5761bd1cae5be38b9b5f32290",
+       "subject": "driver: cleanup imu folder"
+      }
+     ],
+     "successors": [
+      "DRIVERS_IMU_ANALOG_DEVICES_ADIS16477"
+     ]
+    },
+    "DRIVERS_IMU_ADIS16497": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "51e1a80556f8bcd5761bd1cae5be38b9b5f32290",
+       "subject": "driver: cleanup imu folder"
+      }
+     ],
+     "successors": [
+      "DRIVERS_IMU_ANALOG_DEVICES_ADIS16497"
+     ]
+    },
+    "DRIVERS_IMU_FXAS21002C": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "51e1a80556f8bcd5761bd1cae5be38b9b5f32290",
+       "subject": "driver: cleanup imu folder"
+      }
+     ],
+     "successors": [
+      "DRIVERS_IMU_NXP_FXAS21002C"
+     ]
+    },
+    "DRIVERS_IMU_FXOS8701CQ": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "51e1a80556f8bcd5761bd1cae5be38b9b5f32290",
+       "subject": "driver: cleanup imu folder"
+      }
+     ],
+     "successors": [
+      "DRIVERS_IMU_NXP_FXOS8701CQ"
+     ]
+    },
+    "DRIVERS_IMU_L3GD20": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "51e1a80556f8bcd5761bd1cae5be38b9b5f32290",
+       "subject": "driver: cleanup imu folder"
+      }
+     ],
+     "successors": [
+      "DRIVERS_IMU_ST_L3GD20"
+     ]
+    },
+    "DRIVERS_IMU_LSM303D": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "51e1a80556f8bcd5761bd1cae5be38b9b5f32290",
+       "subject": "driver: cleanup imu folder"
+      }
+     ],
+     "successors": [
+      "DRIVERS_IMU_ST_LSM303D"
+     ]
+    }
+   }
+  },
   "symbols": [
    "BOARD_ARCHITECTURE",
    "BOARD_COMPILE_DEFINITIONS",
@@ -4263,6 +4372,7 @@
  },
  "tools": {
   "empy": "3.3.4",
+  "git": "2.56.0",
   "kconfiglib": "14.1.0",
   "pyros-genmsg": "0.5.8"
  }

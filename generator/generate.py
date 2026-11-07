@@ -11,6 +11,9 @@ local clone, and the facts come from the tree's own tools:
 - Module commands: the MAIN argument of every px4_add_module() call.
 - Parameters: the param-lineage snapshot of the release (names) and its
   combined history (removals with their successors), at a pinned commit.
+- Removed Kconfig symbols: every symbol the previous data release defines and
+  this one does not, with the commits that removed it and the successors
+  PX4's git history shows (kconfig_removed.py). Needs the full history.
 
 Usage:
   python generator/generate.py --px4 PATH --param-lineage PATH [--release R ...]
@@ -31,7 +34,11 @@ import tarfile
 import tempfile
 from importlib import metadata
 
-FORMAT = 1
+# -I leaves the script's directory off sys.path.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kconfig_removed import History, HistoryError, derive  # noqa: E402
+
+FORMAT = 2
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GENERATOR_DIR = os.path.join(ROOT, "generator")
 DATA_DIR = os.path.join(ROOT, "data", "releases")
@@ -49,6 +56,25 @@ COMMAND = re.compile(r"^[A-Za-z0-9_]+$")
 
 class GenerateError(Exception):
     pass
+
+
+def version_key(release: str) -> tuple:
+    """Release order: tags by number, alpha < beta < rc < final, main last."""
+    if release == "main":
+        return (1,)
+    m = re.match(r"^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)(\d+))?$", release)
+    if not m:
+        raise GenerateError(f"not a release name: {release}")
+    pre = {"alpha": 0, "beta": 1, "rc": 2, None: 3}[m.group(4)]
+    return (0, int(m.group(1)), int(m.group(2)), int(m.group(3)), pre, int(m.group(5) or 0))
+
+
+def git_version() -> str:
+    out = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout.strip()
+    m = re.match(r"^git version (\S+)", out)
+    if not m:
+        raise GenerateError(f"cannot read the git version from {out!r}")
+    return m.group(1)
 
 
 def git(px4: str, *args: str) -> bytes:
@@ -269,7 +295,33 @@ def tracked(lineage: str, path: str) -> bool:
     return subprocess.run(["git", "-C", lineage, "ls-files", "--error-unmatch", "--", rel], capture_output=True).returncode == 0
 
 
-def build_release(px4: str, lineage: str, pin: dict, release: str, commit: str) -> dict:
+def release_kconfig(px4: str, commit: str) -> dict:
+    with tempfile.TemporaryDirectory(prefix="fork-preflight-") as tmp:
+        tree = os.path.join(tmp, "tree")
+        os.makedirs(tree)
+        extract(px4, commit, tree)
+        return kconfig_data(tree, os.path.join(tmp, "generated"))
+
+
+def removed_data(px4: str, kconfig: dict, commit: str, previous: dict | None, symbols: dict[str, set[str]]) -> dict | None:
+    """Symbols the previous data release defines and this one does not; null for the first release."""
+    if previous is None:
+        return None
+    name = previous["release"]
+    if name not in symbols:
+        resolve(px4, name, previous["commit"])
+        symbols[name] = set(release_kconfig(px4, previous["commit"])["symbols"])
+    try:
+        removed = derive(History(px4), symbols[name], previous["commit"], set(kconfig["symbols"]), commit)
+    except HistoryError as e:
+        raise GenerateError(str(e)) from None
+    return {"previous": name, "symbols": removed}
+
+
+def build_release(px4: str, lineage: str, pin: dict, release: str, commit: str,
+                  previous: dict | None = None, symbols: dict[str, set[str]] | None = None) -> dict:
+    """One release's data. `symbols` caches global Kconfig symbols per release across calls."""
+    symbols = {} if symbols is None else symbols
     resolve(px4, release, commit)
     with tempfile.TemporaryDirectory(prefix="fork-preflight-") as tmp:
         tree = os.path.join(tmp, "tree")
@@ -277,6 +329,9 @@ def build_release(px4: str, lineage: str, pin: dict, release: str, commit: str) 
         os.makedirs(tree)
         extract(px4, commit, tree)
         parameters, notes = parameters_data(lineage, pin, release)
+        kconfig = kconfig_data(tree, generated)
+        symbols[release] = set(kconfig["symbols"])
+        kconfig["removed"] = removed_data(px4, kconfig, commit, previous, symbols)
         return {
             "format": FORMAT,
             "release": release,
@@ -286,12 +341,32 @@ def build_release(px4: str, lineage: str, pin: dict, release: str, commit: str) 
                 "copyright": copyright_line(tree),
                 "text": "LICENSE-THIRD-PARTY",
             },
-            "tools": {name: metadata.version(name) for name in TOOLS},
-            "kconfig": kconfig_data(tree, generated),
+            "tools": {**{name: metadata.version(name) for name in TOOLS}, "git": git_version()},
+            "kconfig": kconfig,
             "commands": commands_data(tree),
             "parameters": parameters,
             "notes": notes,
         }
+
+
+def compare(path: str, data: dict, text: str) -> tuple[bool, str]:
+    """Byte comparison with the file. Only the recorded git version may differ: it is noted,
+    since git is not pinned and every value it produces is still compared."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            stored = f.read()
+    except FileNotFoundError:
+        return False, ""
+    if stored == text:
+        return True, ""
+    try:
+        made_with = json.loads(stored)["tools"]["git"]
+    except (ValueError, KeyError, TypeError):
+        return False, ""
+    here = data["tools"]["git"]
+    if made_with != here and stored == dumps({**data, "tools": {**data["tools"], "git": made_with}}):
+        return True, f" (data made with git {made_with}, this is git {here})"
+    return False, ""
 
 
 def dumps(data: dict) -> str:
@@ -311,6 +386,15 @@ def main(argv: list[str] | None = None) -> int:
         manifest = json.load(f)
     pin = manifest["parameter_data"]
     entries = manifest["releases"]
+    try:
+        ordered = sorted(entries, key=lambda e: version_key(e["release"]))
+    except GenerateError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    if ordered != entries:
+        print("error: releases.json must list the releases in version order", file=sys.stderr)
+        return 2
+    previous = {e["release"]: p for p, e in zip([None, *entries], entries)}
     if args.release:
         known = {e["release"] for e in entries}
         unknown = [r for r in args.release if r not in known]
@@ -321,17 +405,20 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         check_lineage(args.param_lineage, pin)
+        try:
+            History(args.px4).check_full()
+        except HistoryError as e:
+            raise GenerateError(str(e)) from None
         differ = []
+        symbols: dict[str, set[str]] = {}
         for entry in entries:
-            text = dumps(build_release(args.px4, args.param_lineage, pin, entry["release"], entry["commit"]))
+            data = build_release(args.px4, args.param_lineage, pin, entry["release"], entry["commit"],
+                                 previous[entry["release"]], symbols)
+            text = dumps(data)
             path = os.path.join(args.out, f"{entry['release']}.json")
             if args.check:
-                try:
-                    with open(path, encoding="utf-8") as f:
-                        same = f.read() == text
-                except FileNotFoundError:
-                    same = False
-                print(f"{entry['release']}: {'identical' if same else 'DIFFERS'}")
+                same, note = compare(path, data, text)
+                print(f"{entry['release']}: {'identical' if same else 'DIFFERS'}{note}")
                 if not same:
                     differ.append(entry["release"])
             else:

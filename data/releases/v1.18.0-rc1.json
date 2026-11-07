@@ -997,10 +997,59 @@
    "src/modules/zenoh/CMakeLists.txt"
   ]
  },
- "format": 1,
+ "format": 2,
  "kconfig": {
   "board_symbols": {},
   "generated": [],
+  "removed": {
+   "previous": "v1.17.0",
+   "symbols": {
+    "COMMON_GPIO": {
+     "evidence": "selected",
+     "removed_by": [
+      {
+       "commit": "3438d593a149dd1027f0367f48aadc386e15ee4c",
+       "subject": "drivers: MCP23009 & MCP23017 shared code base (#25924)"
+      }
+     ],
+     "successors": [
+      "DRIVERS_GPIO_MCP23009"
+     ]
+    },
+    "DRIVERS_POWER_MONITOR_PM_SELECTOR_AUTERION": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "4ac7853479762de3e99a1d72b63a4da40b5fa8c3",
+       "subject": "auterion autostarter: Added autostart for PWM_EXPANDER, generalized c… (#25925)"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_VELOCITY_SETPOINT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "a1bc09a6ad960215b300b4f5532067055b591657",
+       "subject": "rover: seperate speed control"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_VELOCITY_STATUS": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "a1bc09a6ad960215b300b4f5532067055b591657",
+       "subject": "rover: seperate speed control"
+      }
+     ],
+     "successors": [
+      "ZENOH_PUBSUB_ROVER_SPEED_STATUS"
+     ]
+    }
+   }
+  },
   "symbols": [
    "ARCH_CHIP_IMXRT",
    "ARCH_CHIP_RP2040",
@@ -5331,6 +5380,7 @@
  },
  "tools": {
   "empy": "3.3.4",
+  "git": "2.56.0",
   "kconfiglib": "14.1.0",
   "pyros-genmsg": "0.5.8"
  }

@@ -68,7 +68,16 @@ records about the removal: its kind (`migrated`: PX4 converts a stored
 value; `renamed`: a successor exists but PX4 does not convert the value;
 `replaced`, `fixed`, `removed`) and the successors. A `command-removed`
 finding names the `CMakeLists.txt` that declared the command at the base and
-the commands that file declares at the target.
+the commands that file declares at the target. A `kconfig-undefined` finding
+for a symbol the base defined names the release and the PX4 commits that
+removed it, and what PX4's git history shows took its place: the name the
+same commit added (`renamed to ...`), the symbols in-tree boards set instead
+(`in-tree boards set ... (79/79) instead`, boards that changed over out of
+boards that set it), or the symbols it selected. A successor that a later
+release removed again is followed to the target ("then in main ..."), and
+the hint says when the target defines none of them. These are records of
+what upstream did, not advice; read the named commits before changing a
+board file.
 
 Definitions the fork adds or changes count as defined: `config`/`menuconfig`
 in Kconfig files, `MAIN` in `CMakeLists.txt`, `PARAM_DEFINE_INT32/FLOAT` in
@@ -89,6 +98,12 @@ What the data does not cover:
   unless the base had it. Parameters that only a board directory defines
   (v1.18.0-rc1: `PWM_VOLT_SEL`, `PWM_LEVEL_CONT`, `SLNK_RADIO_*`) are not in
   it; a script that sets one is reported as "not in the parameter data".
+- **Kconfig successors the rules miss.** The successors come from fixed
+  rules over the git history between two data releases (measured on all 53
+  symbols the data releases removed: 21 found, 0 wrong, 6 missed). A
+  successor that already existed before the removal, a rename on one board
+  only, or a split into several new symbols is not found; the hint then
+  names only the removing commits. Board-only symbols get no removal record.
 - **Builtins.** Shell builtins and commands that are not PX4 modules
   (`echo`, `set`, `list_files`) are never reported.
 - **History that hides upstream work.** The change set comes from git
@@ -169,10 +184,23 @@ searches:
   the commit pinned in `generator/releases.json`. param-lineage has no
   snapshot of `main`, so `main` has no parameter data (`parameters` is null
   and `notes` says so).
+- **Removed Kconfig symbols.** `kconfig.removed` lists the global symbols the
+  previous data release defines and this one does not, with up to three
+  commits that deleted their `config` line (for a Zenoh topic, its msg file)
+  and the successors the git history shows, from the first rule that
+  matches: `renamed` (the deleting commit adds a `config` with a matching
+  name or a batch prefix rename; a Zenoh msg file renamed by git), `boards`
+  (in-tree board files that set it set the successor instead, in the same
+  commits or between the two releases) or `selected` (it selected the
+  successor). The rules are in `generator/kconfig_removed.py`. They read only
+  git objects of the pinned commits, so the PX4 clone must have the full
+  history (a shallow clone stops the generator), and the git version is
+  recorded in `tools` because rename detection is git's. `--check` notes a
+  different git version and still compares every value.
 
 ### Regenerate
 
-Needs a clone of PX4-Autopilot with the release tags, a clone of
+Needs a full (not shallow) clone of PX4-Autopilot with the release tags, a clone of
 param-lineage at the pinned commit, Python 3.12 and the pinned packages:
 
 ```sh

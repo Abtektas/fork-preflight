@@ -8,7 +8,7 @@
  "additionalProperties": false,
  "properties": {
   "format": {
-   "const": 1,
+   "const": 2,
    "description": "Layout of this file. Changes when a field is added, renamed or removed."
   },
   "release": {
@@ -37,18 +37,19 @@
   },
   "tools": {
    "type": "object",
-   "description": "Versions of the Python packages that ran the source tree's own tools.",
-   "required": ["kconfiglib", "empy", "pyros-genmsg"],
+   "description": "Versions of the Python packages that ran the source tree's own tools, and of git, which produced the removal history.",
+   "required": ["kconfiglib", "empy", "pyros-genmsg", "git"],
    "additionalProperties": false,
    "properties": {
     "kconfiglib": {"type": "string"},
     "empy": {"type": "string"},
-    "pyros-genmsg": {"type": "string"}
+    "pyros-genmsg": {"type": "string"},
+    "git": {"type": "string"}
    }
   },
   "kconfig": {
    "type": "object",
-   "required": ["symbols", "board_symbols", "generated", "warnings"],
+   "required": ["symbols", "board_symbols", "generated", "warnings", "removed"],
    "additionalProperties": false,
    "properties": {
     "symbols": {
@@ -70,6 +71,25 @@
      "type": "array",
      "description": "kconfiglib warnings, sorted.",
      "items": {"type": "string"}
+    },
+    "removed": {
+     "description": "Global symbols the previous data release defines and this one does not, with what PX4's git history between the two pinned commits shows. Null for the first data release.",
+     "oneOf": [
+      {"type": "null"},
+      {
+       "type": "object",
+       "required": ["previous", "symbols"],
+       "additionalProperties": false,
+       "properties": {
+        "previous": {"oneOf": [{"$ref": "#/$defs/tag"}, {"const": "main"}]},
+        "symbols": {
+         "type": "object",
+         "propertyNames": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"},
+         "additionalProperties": {"$ref": "#/$defs/kconfig_removal"}
+        }
+       }
+      }
+     ]
     }
    }
   },
@@ -136,6 +156,56 @@
   "tag": {"type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)[0-9]+)?$"},
   "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
   "parameter": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$", "maxLength": 16},
+  "kconfig_removal": {
+   "type": "object",
+   "required": ["removed_by", "evidence", "successors"],
+   "additionalProperties": false,
+   "properties": {
+    "removed_by": {
+     "type": "array",
+     "description": "Up to 3 non-merge commits between the two releases that delete the symbol's config line (or a Zenoh topic's msg file), in git rev-list order.",
+     "maxItems": 3,
+     "items": {
+      "type": "object",
+      "required": ["commit", "subject"],
+      "additionalProperties": false,
+      "properties": {
+       "commit": {"$ref": "#/$defs/commit"},
+       "subject": {"type": "string", "maxLength": 100}
+      }
+     }
+    },
+    "evidence": {
+     "description": "Which rule found the successors: renamed (the removing commit adds it with a matching name, or a Zenoh msg file was renamed), boards (in-tree boards set it instead), selected (the symbol selected it), or null.",
+     "enum": ["renamed", "boards", "selected", null]
+    },
+    "successors": {
+     "type": "array",
+     "description": "Symbols this release defines that took over, sorted; empty when the history shows none.",
+     "items": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"}
+    },
+    "via": {
+     "type": "array",
+     "description": "Renamed only: intermediate names added and removed again between the two releases, in order.",
+     "minItems": 1,
+     "items": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"}
+    },
+    "boards": {
+     "type": "object",
+     "description": "Boards evidence only, per successor: how many board files set it where the removed symbol was set, out of how many, counted per commit (same-commit) or between the two releases (net).",
+     "additionalProperties": {
+      "type": "object",
+      "required": ["boards", "of", "how"],
+      "additionalProperties": false,
+      "properties": {
+       "boards": {"type": "integer", "minimum": 1},
+       "of": {"type": "integer", "minimum": 1},
+       "how": {"enum": ["same-commit", "net"]}
+      }
+     }
+    }
+   }
+  },
   "symbols": {
    "type": "array",
    "items": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"}

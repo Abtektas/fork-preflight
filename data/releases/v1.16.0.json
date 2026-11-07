@@ -884,10 +884,114 @@
    "src/modules/zenoh/CMakeLists.txt"
   ]
  },
- "format": 1,
+ "format": 2,
  "kconfig": {
   "board_symbols": {},
   "generated": [],
+  "removed": {
+   "previous": "v1.15.4",
+   "symbols": {
+    "BOARD_ROOTFSDIR": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "0cb7b8b5255d2938aef1b46fb73acc3f83c7fc6e",
+       "subject": "voxl2: Changed from old CONFIG_BOARD_ROOTFSDIR to new CONFIG_BOARD_ROOT_PATH in Posix builds (#24392"
+      }
+     ],
+     "successors": []
+    },
+    "DRIVERS_MAGNETOMETER_LIS2MDL": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "f0a852918bd46d28f70c9ffb75c62a1dc36e605c",
+       "subject": "lis2mdl: remove driver from source. This part is functionaly equivalent to the iis2mdc"
+      }
+     ],
+     "successors": []
+    },
+    "MODULES_DIFFERENTIAL_DRIVE": {
+     "boards": {
+      "MODULES_ROVER_DIFFERENTIAL": {
+       "boards": 6,
+       "how": "net",
+       "of": 7
+      }
+     },
+     "evidence": "boards",
+     "removed_by": [
+      {
+       "commit": "33d99a13e835743943b15fe8a75c00acd2fe01b9",
+       "subject": "differential: restructure and update module (#23430)"
+      }
+     ],
+     "successors": [
+      "MODULES_ROVER_DIFFERENTIAL"
+     ]
+    },
+    "ZENOH_CONFIG_PATH": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "a99cc0a20b1b29696d16b6a3157f03ee863fd999",
+       "subject": "Remove unused kconfig symbol"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_COLLISION_REPORT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "b5d18c613181f0935890aef91cbc1da4d06e00c3",
+       "subject": "Remove unused collision_report message"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_DIFFERENTIAL_DRIVE_SETPOINT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "33d99a13e835743943b15fe8a75c00acd2fe01b9",
+       "subject": "differential: restructure and update module (#23430)"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_TRAJECTORY_BEZIER": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "b916a96e005227458c4f3ae1e02fcd62a873ecfe",
+       "subject": "Remove uorb topics exclusively used for avoidance"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_VEHICLE_TRAJECTORY_BEZIER": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "b916a96e005227458c4f3ae1e02fcd62a873ecfe",
+       "subject": "Remove uorb topics exclusively used for avoidance"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_VEHICLE_TRAJECTORY_WAYPOINT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "b916a96e005227458c4f3ae1e02fcd62a873ecfe",
+       "subject": "Remove uorb topics exclusively used for avoidance"
+      }
+     ],
+     "successors": []
+    }
+   }
+  },
   "symbols": [
    "BMI088_ACCELEROMETER_INT1",
    "BMI088_ACCELEROMETER_INT2",
@@ -4518,6 +4622,7 @@
  },
  "tools": {
   "empy": "3.3.4",
+  "git": "2.56.0",
   "kconfiglib": "14.1.0",
   "pyros-genmsg": "0.5.8"
  }

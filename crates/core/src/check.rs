@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //! Release selection, the fork's change set, and the rules.
 
-use crate::data::{Release, Version};
+use crate::data::{KconfigRemoval, Release, Version};
 use crate::git::{Change, Repo};
 use crate::parse::{
     board_assignments, board_of, cmake_main_commands, is_script, kconfig_definitions, param_uses,
@@ -425,7 +425,14 @@ impl Context<'_> {
                 text: assignment.text,
                 defined_at_base,
                 message,
-                hint: self.fork.kept_hint(|d| d.symbols.contains(symbol)),
+                hint: join_hints(
+                    if defined_at_base == Some(true) {
+                        self.kconfig_removal_hint(symbol, board.as_deref())
+                    } else {
+                        None
+                    },
+                    self.fork.kept_hint(|d| d.symbols.contains(symbol)),
+                ),
             });
         }
         findings
@@ -546,8 +553,8 @@ impl Context<'_> {
         })
     }
 
-    /// What param-lineage says about the latest removal of a parameter after the base, up to the target.
-    fn removal_hint(&self, name: &str) -> Option<String> {
+    /// Data releases after the base, up to the target, oldest first.
+    fn releases_in_range(&self) -> Vec<&Release> {
         let low = self.base.map(|b| Version::parse(&b.release));
         let high = Version::parse(&self.target.release);
         let mut in_range: Vec<&Release> = self
@@ -559,6 +566,95 @@ impl Context<'_> {
             })
             .collect();
         in_range.sort_by_key(|r| Version::parse(&r.release));
+        in_range
+    }
+
+    /// What PX4's history says about the latest removal of a Kconfig symbol after the base,
+    /// up to the target, following its successors through later releases to the target.
+    fn kconfig_removal_hint(&self, symbol: &str, board: Option<&str>) -> Option<String> {
+        let in_range = self.releases_in_range();
+        let (index, removal) = kconfig_removal_in(&in_range, symbol, 0)?;
+        let release = &in_range[index].release;
+        let mut hint = format!("removed in {release}");
+        if !removal.removed_by.is_empty() {
+            let commits: Vec<String> = removal
+                .removed_by
+                .iter()
+                .map(|c| format!("{} ({})", &c.commit[..c.commit.len().min(10)], c.subject))
+                .collect();
+            hint.push_str(&format!(" by {}", commits.join(", ")));
+        }
+        let Some(words) = successor_words(removal) else {
+            return Some(hint);
+        };
+        hint.push_str(&format!("; {words}"));
+        let mut steps = Vec::new();
+        let mut defined = Vec::new();
+        for successor in &removal.successors {
+            self.follow(
+                &in_range,
+                successor,
+                index + 1,
+                board,
+                0,
+                &mut steps,
+                &mut defined,
+            );
+        }
+        if !steps.is_empty() {
+            hint.push_str(&format!("; then {}", steps.join(", ")));
+        }
+        if defined.is_empty() {
+            hint.push_str(&format!("; {} defines none of them", self.target.release));
+        }
+        Some(hint)
+    }
+
+    /// Follow a successor named in an earlier release to the names the target defines.
+    #[allow(clippy::too_many_arguments)]
+    fn follow(
+        &self,
+        in_range: &[&Release],
+        name: &str,
+        from: usize,
+        board: Option<&str>,
+        depth: usize,
+        steps: &mut Vec<String>,
+        defined: &mut Vec<String>,
+    ) {
+        if self.target.defines_symbol(name, board) {
+            if !defined.iter().any(|d| d == name) {
+                defined.push(name.to_string());
+            }
+            return;
+        }
+        if depth >= MAX_FOLLOW {
+            return;
+        }
+        let Some((index, removal)) = kconfig_removal_in(in_range, name, from) else {
+            return;
+        };
+        let release = &in_range[index].release;
+        match successor_words(removal) {
+            Some(words) => steps.push(format!("in {release} {name}: {words}")),
+            None => steps.push(format!("{name} was removed in {release}")),
+        }
+        for successor in &removal.successors {
+            self.follow(
+                in_range,
+                successor,
+                index + 1,
+                board,
+                depth + 1,
+                steps,
+                defined,
+            );
+        }
+    }
+
+    /// What param-lineage says about the latest removal of a parameter after the base, up to the target.
+    fn removal_hint(&self, name: &str) -> Option<String> {
+        let in_range = self.releases_in_range();
         let (release, removal) = in_range.iter().rev().find_map(|r| {
             r.parameters
                 .as_ref()
@@ -580,6 +676,56 @@ impl Context<'_> {
         }
         Some(hint)
     }
+}
+
+/// How many releases a successor is followed through after the one that removed the symbol.
+const MAX_FOLLOW: usize = 4;
+
+/// The latest removal of a symbol among `in_range[from..]`, with its index.
+fn kconfig_removal_in<'a>(
+    in_range: &[&'a Release],
+    symbol: &str,
+    from: usize,
+) -> Option<(usize, &'a KconfigRemoval)> {
+    in_range
+        .iter()
+        .enumerate()
+        .skip(from)
+        .rev()
+        .find_map(|(index, r)| {
+            r.kconfig
+                .removed
+                .as_ref()
+                .and_then(|removed| removed.symbols.get(symbol))
+                .map(|removal| (index, removal))
+        })
+}
+
+/// The evidence for a removal's successors in words, or None when it names none.
+fn successor_words(removal: &KconfigRemoval) -> Option<String> {
+    if removal.successors.is_empty() {
+        return None;
+    }
+    let names = removal.successors.join(", ");
+    Some(match removal.evidence.as_deref() {
+        Some("renamed") if !removal.via.is_empty() => {
+            format!("renamed to {names} (via {})", removal.via.join(", "))
+        }
+        Some("renamed") => format!("renamed to {names}"),
+        Some("boards") => {
+            let counted: Vec<String> = removal
+                .successors
+                .iter()
+                .map(|s| match removal.boards.get(s) {
+                    Some(count) => format!("{s} ({}/{})", count.boards, count.of),
+                    None => s.clone(),
+                })
+                .collect();
+            format!("in-tree boards set {} instead", counted.join(" and "))
+        }
+        Some("selected") => format!("it selected {names}"),
+        _ => format!("successors: {names}"),
+    })
 }
 
 /// Definitions in a Kconfig file, limited to the given lines when there are any.

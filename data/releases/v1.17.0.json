@@ -911,10 +911,192 @@
    "src/modules/zenoh/CMakeLists.txt"
   ]
  },
- "format": 1,
+ "format": 2,
  "kconfig": {
   "board_symbols": {},
   "generated": [],
+  "removed": {
+   "previous": "v1.16.2",
+   "symbols": {
+    "MODULES_FW_POS_CONTROL": {
+     "boards": {
+      "MODULES_FW_LATERAL_LONGITUDINAL_CONTROL": {
+       "boards": 61,
+       "how": "net",
+       "of": 64
+      },
+      "MODULES_FW_MODE_MANAGER": {
+       "boards": 79,
+       "how": "same-commit",
+       "of": 79
+      }
+     },
+     "evidence": "boards",
+     "removed_by": [
+      {
+       "commit": "8c1f7ec7c0cd40b35c1d117974867cde6e2bc156",
+       "subject": "rename FWPositionController to FWModeManager"
+      }
+     ],
+     "successors": [
+      "MODULES_FW_LATERAL_LONGITUDINAL_CONTROL",
+      "MODULES_FW_MODE_MANAGER"
+     ]
+    },
+    "MODULES_ROVER_POS_CONTROL": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "e266d1f22fcc4048e9cdc696d79ddbb7b72e295f",
+       "subject": "rover: remove deprecated module"
+      }
+     ],
+     "successors": []
+    },
+    "USER_FW_POS_CONTROL": {
+     "evidence": "renamed",
+     "removed_by": [
+      {
+       "commit": "8c1f7ec7c0cd40b35c1d117974867cde6e2bc156",
+       "subject": "rename FWPositionController to FWModeManager"
+      }
+     ],
+     "successors": [
+      "USER_FW_MODE_MANAGER"
+     ]
+    },
+    "USER_ROVER_POS_CONTROL": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "e266d1f22fcc4048e9cdc696d79ddbb7b72e295f",
+       "subject": "rover: remove deprecated module"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_BUFFER128": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "98ceb0ce799031202b43248521617f7aa0be3409",
+       "subject": "voxl_esc: Added GPIO control feature"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_NPFG_STATUS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "779a55c6dc272cd11ad3df3f8bd20425ecef30f8",
+       "subject": "FW Position Controller rework - split up old module into two, one handling setpoint generation, one "
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_ACKERMANN_GUIDANCE_STATUS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "55f51d7e7e7a525ce0a0c990ccabbcd926f1a81e",
+       "subject": "ackermann: refactor code architecture"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_ACKERMANN_SETPOINT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "55f51d7e7e7a525ce0a0c990ccabbcd926f1a81e",
+       "subject": "ackermann: refactor code architecture"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_ACKERMANN_STATUS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "55f51d7e7e7a525ce0a0c990ccabbcd926f1a81e",
+       "subject": "ackermann: refactor code architecture"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_DIFFERENTIAL_GUIDANCE_STATUS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "04a3c4af20df9e851e281776bfa51d02759ddee6",
+       "subject": "Differential Rover: Refactor and clean up, align with Ackermann rover(#24318)"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_DIFFERENTIAL_SETPOINT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "04a3c4af20df9e851e281776bfa51d02759ddee6",
+       "subject": "Differential Rover: Refactor and clean up, align with Ackermann rover(#24318)"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_DIFFERENTIAL_STATUS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "04a3c4af20df9e851e281776bfa51d02759ddee6",
+       "subject": "Differential Rover: Refactor and clean up, align with Ackermann rover(#24318)"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_MECANUM_GUIDANCE_STATUS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "7c63468e8bbff1da617ff1a746ade6281de24709",
+       "subject": "mecanum: refactor code architecture"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_MECANUM_SETPOINT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "7c63468e8bbff1da617ff1a746ade6281de24709",
+       "subject": "mecanum: refactor code architecture"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_ROVER_MECANUM_STATUS": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "7c63468e8bbff1da617ff1a746ade6281de24709",
+       "subject": "mecanum: refactor code architecture"
+      }
+     ],
+     "successors": []
+    },
+    "ZENOH_PUBSUB_TRAJECTORY_WAYPOINT": {
+     "evidence": null,
+     "removed_by": [
+      {
+       "commit": "b916a96e005227458c4f3ae1e02fcd62a873ecfe",
+       "subject": "Remove uorb topics exclusively used for avoidance"
+      }
+     ],
+     "successors": []
+    }
+   }
+  },
   "symbols": [
    "ARCH_CHIP_IMXRT",
    "ARCH_CHIP_RP2040",
@@ -4769,6 +4951,7 @@
  },
  "tools": {
   "empy": "3.3.4",
+  "git": "2.56.0",
   "kconfiglib": "14.1.0",
   "pyros-genmsg": "0.5.8"
  }

@@ -10,6 +10,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "generator"))
 
 import generate  # noqa: E402
+import kconfig_removed  # noqa: E402
 
 
 def write(path, text):
@@ -85,6 +86,42 @@ class KconfigLoading(unittest.TestCase):
         tree, generated = self.tree({"Kconfig": 'source "$(SOMETHING_NEW)/Kconfig"\n'})
         with self.assertRaisesRegex(generate.GenerateError, "SOMETHING_NEW"):
             generate.kconfig_data(tree, generated)
+
+
+class RemovalRules(unittest.TestCase):
+    def test_token_insert_rename(self):
+        self.assertTrue(kconfig_removed.insert_rename("DRIVERS_IMU_L3GD20", "DRIVERS_IMU_ST_L3GD20"))
+        self.assertFalse(kconfig_removed.insert_rename("DRIVERS_IMU_L3GD20", "DRIVERS_IMU_L3GD20_X"))
+
+    def test_batch_prefix_rename_needs_three_pairs(self):
+        rem = {"UAVCAN_V1_A", "UAVCAN_V1_B", "UAVCAN_V1_C", "OTHER"}
+        add = {"CYPHAL_A", "CYPHAL_B", "CYPHAL_C", "NEW"}
+        self.assertEqual(kconfig_removed.prefix_groups(rem, add),
+                         {"UAVCAN_V1_A": "CYPHAL_A", "UAVCAN_V1_B": "CYPHAL_B", "UAVCAN_V1_C": "CYPHAL_C"})
+        self.assertEqual(kconfig_removed.prefix_groups({"UAVCAN_V1_A", "UAVCAN_V1_B"}, {"CYPHAL_A", "CYPHAL_B"}), {})
+
+    def test_zenoh_topic_name(self):
+        self.assertEqual(kconfig_removed.topic_of("msg/RoverSpeedStatus.msg"), "ZENOH_PUBSUB_ROVER_SPEED_STATUS")
+
+
+class Ordering(unittest.TestCase):
+    def test_version_key(self):
+        names = ["main", "v1.18.0", "v1.18.0-rc1", "v1.18.0-beta2", "v1.17.0", "v1.9.0", "v1.10.0"]
+        self.assertEqual(sorted(names, key=generate.version_key),
+                         ["v1.9.0", "v1.10.0", "v1.17.0", "v1.18.0-beta2", "v1.18.0-rc1", "v1.18.0", "main"])
+        with self.assertRaises(generate.GenerateError):
+            generate.version_key("release/1.18")
+
+    def test_check_notes_only_a_git_version_difference(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "r.json")
+        data = {"tools": {"git": "2.56.0"}, "kconfig": {"symbols": ["A"]}}
+        write(path, generate.dumps({**data, "tools": {"git": "2.43.0"}}))
+        self.assertEqual(generate.compare(path, data, generate.dumps(data)),
+                         (True, " (data made with git 2.43.0, this is git 2.56.0)"))
+        changed = {**data, "kconfig": {"symbols": ["B"]}}
+        self.assertEqual(generate.compare(path, changed, generate.dumps(changed)), (False, ""))
 
 
 class ReleaseData(unittest.TestCase):
@@ -167,6 +204,48 @@ class ReleaseData(unittest.TestCase):
         self.assertEqual(set(self.data["v1.17.0"]["parameters"]["names"]) - set(rc1["names"]), set(rc1["removed"]))
         self.assertIsNone(self.data["main"]["parameters"])
         self.assertTrue(any("no snapshot of main" in n for n in self.data["main"]["notes"]))
+
+    def removal(self, release, symbol):
+        return self.data[release]["kconfig"]["removed"]["symbols"][symbol]
+
+    def test_kconfig_removed_matches_the_symbol_sets(self):
+        releases = [e["release"] for e in self.manifest["releases"]]
+        self.assertIsNone(self.data[releases[0]]["kconfig"]["removed"])
+        for previous, release in zip(releases, releases[1:]):
+            removed = self.data[release]["kconfig"]["removed"]
+            self.assertEqual(removed["previous"], previous)
+            self.assertEqual(set(removed["symbols"]), self.symbols(previous) - self.symbols(release), release)
+            for symbol, entry in removed["symbols"].items():
+                self.assertEqual(entry["successors"], sorted(set(entry["successors"])), symbol)
+                self.assertTrue(set(entry["successors"]) <= self.symbols(release), symbol)
+                self.assertEqual(entry["evidence"] is None, not entry["successors"], symbol)
+
+    # Known answers read from each commit by hand (DESIGN.md "Kconfig rename hints").
+
+    def test_kconfig_renamed(self):
+        e = self.removal("main", "NUM_MISSION_ITMES_SUPPORTED")
+        self.assertEqual((e["evidence"], e["successors"]), ("renamed", ["NUM_MISSION_ITEMS_SUPPORTED"]))
+        self.assertEqual(e["removed_by"][0]["commit"][:10], "1476321315")
+        e = self.removal("v1.18.0-rc1", "ZENOH_PUBSUB_ROVER_VELOCITY_STATUS")
+        self.assertEqual(e["successors"], ["ZENOH_PUBSUB_ROVER_SPEED_STATUS"])
+
+    def test_kconfig_boards(self):
+        e = self.removal("v1.17.0", "MODULES_FW_POS_CONTROL")
+        self.assertEqual(e["evidence"], "boards")
+        self.assertEqual(e["boards"], {
+            "MODULES_FW_LATERAL_LONGITUDINAL_CONTROL": {"boards": 61, "of": 64, "how": "net"},
+            "MODULES_FW_MODE_MANAGER": {"boards": 79, "of": 79, "how": "same-commit"},
+        })
+        self.assertEqual(e["removed_by"][0]["subject"], "rename FWPositionController to FWModeManager")
+
+    def test_kconfig_selected_and_none(self):
+        e = self.removal("v1.18.0-rc1", "COMMON_GPIO")
+        self.assertEqual((e["evidence"], e["successors"]), ("selected", ["DRIVERS_GPIO_MCP23009"]))
+        e = self.removal("main", "BOARD_UAVCAN_TIMER_OVERRIDE")
+        self.assertEqual((e["evidence"], e["successors"]), (None, []))
+        self.assertEqual(e["removed_by"][0]["commit"][:10], "3f6fe0e40c")
+        e = self.removal("v1.17.0", "MODULES_ROVER_POS_CONTROL")
+        self.assertEqual((e["evidence"], e["removed_by"][0]["subject"]), (None, "rover: remove deprecated module"))
 
     def test_license_line_per_release(self):
         self.assertEqual(self.data["v1.17.0"]["license"]["copyright"], "Copyright (c) 2012 - 2023, PX4 Development Team")

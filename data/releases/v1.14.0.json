@@ -773,10 +773,11 @@
    "platforms/common/work_queue/wqueue_test/CMakeLists.txt"
   ]
  },
- "format": 1,
+ "format": 2,
  "kconfig": {
   "board_symbols": {},
   "generated": [],
+  "removed": null,
   "symbols": [
    "BOARD_ARCHITECTURE",
    "BOARD_COMPILE_DEFINITIONS",
@@ -3761,6 +3762,7 @@
  },
  "tools": {
   "empy": "3.3.4",
+  "git": "2.56.0",
   "kconfiglib": "14.1.0",
   "pyros-genmsg": "0.5.8"
  }

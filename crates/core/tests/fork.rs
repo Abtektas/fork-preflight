@@ -51,7 +51,7 @@ fn release(
     boards: &[(&str, &[&str])],
 ) -> (String, Release) {
     let value = serde_json::json!({
-        "format": 1,
+        "format": 2,
         "release": name,
         "source": {"commit": commit},
         "kconfig": {
@@ -314,7 +314,7 @@ fn release_with(
         })
     });
     let value = serde_json::json!({
-        "format": 1,
+        "format": 2,
         "release": name,
         "source": {"commit": commit},
         "kconfig": {"symbols": [], "board_symbols": {}},
@@ -860,5 +860,158 @@ fn names_defined_by_upstream_lines_of_a_fork_modified_file_get_a_hint() {
                 Some(kept("src/modules/rover/Kconfig").as_str())
             ),
         ]
+    );
+}
+
+/// A release whose data records removed Kconfig symbols: (symbol, evidence, successors, via).
+type KconfigRemoved<'a> = (&'a str, Option<&'a str>, &'a [&'a str], &'a [&'a str]);
+
+fn release_removing(
+    name: &str,
+    previous: &str,
+    symbols: &[&str],
+    removed: &[KconfigRemoved],
+) -> (String, Release) {
+    let value = serde_json::json!({
+        "format": 2,
+        "release": name,
+        "source": {"commit": "0000000000000000000000000000000000000000"},
+        "kconfig": {
+            "symbols": symbols,
+            "board_symbols": {},
+            "removed": {
+                "previous": previous,
+                "symbols": removed
+                    .iter()
+                    .map(|(symbol, evidence, successors, via)| {
+                        let mut entry = serde_json::json!({
+                            "removed_by": [{"commit": format!("{:a<40}", name.replace('.', "")), "subject": format!("change in {name}")}],
+                            "evidence": evidence,
+                            "successors": successors,
+                        });
+                        if !via.is_empty() {
+                            entry["via"] = serde_json::json!(via);
+                        }
+                        if *evidence == Some("boards") {
+                            entry["boards"] = successors
+                                .iter()
+                                .map(|s| (s.to_string(), serde_json::json!({"boards": 7, "of": 8, "how": "same-commit"})))
+                                .collect::<serde_json::Map<_, _>>()
+                                .into();
+                        }
+                        (symbol.to_string(), entry)
+                    })
+                    .collect::<BTreeMap<_, _>>(),
+            },
+        },
+        "commands": {},
+        "parameters": null,
+    });
+    (name.to_string(), serde_json::from_value(value).unwrap())
+}
+
+fn kconfig_hints(
+    data: &BTreeMap<String, Release>,
+    fork: &Fork,
+    target: &str,
+) -> Vec<(String, Option<String>)> {
+    let report = check::run(&fork.repo, data, &opts(target, None)).unwrap();
+    report
+        .findings
+        .iter()
+        .filter(|f| f.defined_at_base == Some(true))
+        .map(|f| (f.symbol.clone(), f.hint.clone()))
+        .collect()
+}
+
+#[test]
+fn removed_kconfig_symbols_get_their_history_as_a_hint() {
+    let f = fork();
+    let base = release("v1.0.0", &f.base, &["OLD", "OLD_OFF", "KEEP", "GONE"], &[]);
+    // v1.1.0 renames GONE to MID; v1.2.0 renames MID to NEW.
+    let data: BTreeMap<String, Release> = [
+        base,
+        release_removing(
+            "v1.1.0",
+            "v1.0.0",
+            &["KEEP", "MID"],
+            &[("GONE", Some("renamed"), &["MID"], &[])],
+        ),
+        release_removing(
+            "v1.2.0",
+            "v1.1.0",
+            &["KEEP", "NEW"],
+            &[("MID", Some("renamed"), &["NEW"], &["TMP"])],
+        ),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        kconfig_hints(&data, &f, "v1.1.0"),
+        vec![(
+            "GONE".to_string(),
+            Some("removed in v1.1.0 by v110aaaaaa (change in v1.1.0); renamed to MID".to_string())
+        )]
+    );
+    assert_eq!(
+        kconfig_hints(&data, &f, "v1.2.0"),
+        vec![(
+            "GONE".to_string(),
+            Some("removed in v1.1.0 by v110aaaaaa (change in v1.1.0); renamed to MID; then in v1.2.0 MID: renamed to NEW (via TMP)".to_string())
+        )]
+    );
+}
+
+#[test]
+fn kconfig_hint_evidence_kinds() {
+    let f = fork();
+    let hint = |removal: KconfigRemoved, symbols: &[&str]| {
+        let base = release("v1.0.0", &f.base, &["OLD", "OLD_OFF", "KEEP", "GONE"], &[]);
+        let data: BTreeMap<String, Release> = [
+            base,
+            release_removing("v1.1.0", "v1.0.0", symbols, &[removal]),
+        ]
+        .into_iter()
+        .collect();
+        kconfig_hints(&data, &f, "v1.1.0").remove(0).1.unwrap()
+    };
+    let by = "removed in v1.1.0 by v110aaaaaa (change in v1.1.0)";
+    assert_eq!(
+        hint(
+            ("GONE", Some("boards"), &["A", "B"], &[]),
+            &["KEEP", "A", "B"]
+        ),
+        format!("{by}; in-tree boards set A (7/8) and B (7/8) instead")
+    );
+    assert_eq!(
+        hint(("GONE", Some("selected"), &["A"], &[]), &["KEEP", "A"]),
+        format!("{by}; it selected A")
+    );
+    assert_eq!(hint(("GONE", None, &[], &[]), &["KEEP"]), by);
+}
+
+#[test]
+fn kconfig_hint_says_when_the_target_defines_no_successor() {
+    let f = fork();
+    let base = release("v1.0.0", &f.base, &["OLD", "OLD_OFF", "KEEP", "GONE"], &[]);
+    // MID is removed again in v1.2.0 with no successor.
+    let data: BTreeMap<String, Release> = [
+        base,
+        release_removing(
+            "v1.1.0",
+            "v1.0.0",
+            &["KEEP", "MID"],
+            &[("GONE", Some("renamed"), &["MID"], &[])],
+        ),
+        release_removing("v1.2.0", "v1.1.0", &["KEEP"], &[("MID", None, &[], &[])]),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        kconfig_hints(&data, &f, "v1.2.0"),
+        vec![(
+            "GONE".to_string(),
+            Some("removed in v1.1.0 by v110aaaaaa (change in v1.1.0); renamed to MID; then MID was removed in v1.2.0; v1.2.0 defines none of them".to_string())
+        )]
     );
 }
