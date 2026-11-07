@@ -7,3 +7,7 @@
   Kconfig symbols (generated Zenoh catalog and board Kconfig included),
   module commands, and parameters from param-lineage. JSON Schema in
   `data/schema/`. `--check` regenerates the data byte for byte.
+- Scanner `fork-preflight` (Rust) with the `kconfig-undefined` check: board
+  file lines whose Kconfig symbol the target release does not define, limited
+  to what the fork added or changed since its base release (`--all-files`
+  for every board file). Text and JSON output; the release data is built in.

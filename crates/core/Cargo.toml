@@ -1,0 +1,16 @@
+[package]
+name = "fork-preflight-core"
+description = "Release data and rules of fork-preflight"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

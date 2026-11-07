@@ -10,8 +10,37 @@ something the new release no longer defines:
   unknown name prints an error at boot and the script goes on),
 - module commands in startup scripts whose module was removed.
 
-**Status: early development, not released.** This repository has the release
-data generator (milestone P1). The scanner does not exist yet.
+**Status: early development, not released.** The release data (milestone P1)
+and the first scanner check, `kconfig-undefined` (milestone P2), exist. The
+parameter and command checks do not exist yet.
+
+## Scanner
+
+```sh
+cargo build --release
+target/release/fork-preflight --target v1.18.0-rc1 path/to/fork
+```
+
+- `--target` is the release the fork will merge (`--list-releases` lists the
+  releases in the data, which is built into the binary).
+- The base is the newest release in the data whose commit is in HEAD's
+  history; `--base` names it instead.
+- It reads the committed state of HEAD. In files the fork added since the
+  base it checks every line; in upstream files the fork modified it checks
+  only the lines the fork added or changed, because the merge replaces the
+  rest. `--all-files` checks every board file in HEAD.
+- `kconfig-undefined`: a `CONFIG_X=...` or `# CONFIG_X is not set` line in a
+  `boards/<vendor>/<model>/<label>.px4board` file whose symbol the target
+  release does not define (globally or in that board's own Kconfig), unless
+  a Kconfig file the fork added or changed defines it. The finding says
+  whether the base release defined the symbol.
+- Output is text, or `--json`. Exit status 0 without findings, 1 with
+  findings, 2 on a usage or data error. Every report ends with the notices of
+  [DISCLAIMER.md](DISCLAIMER.md).
+
+On PX4's own main at 95a0c23482, `--target main --all-files` reports 19 lines
+in 11 board files that assign 8 undefined symbols (the lines PX4 pull
+request 29670 removes); on that pull request's commit it reports none.
 
 See [DISCLAIMER.md](DISCLAIMER.md): no warranty, no liability, not a safety
 tool. This project is not affiliated with or endorsed by the PX4 project or
@@ -64,6 +93,16 @@ limits the run.
 
 Set `FORK_PREFLIGHT_PX4` and `FORK_PREFLIGHT_PARAM_LINEAGE` to the two clones
 to also run the regeneration check from the tests.
+
+The scanner (Rust 1.94.0, from `rust-toolchain.toml`):
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+FORK_PREFLIGHT_PX4=../PX4-Autopilot cargo test
+```
+
+Without `FORK_PREFLIGHT_PX4` the known-answer tests on PX4 are skipped.
 
 ## License
 

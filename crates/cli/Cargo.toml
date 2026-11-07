@@ -1,0 +1,21 @@
+[package]
+name = "fork-preflight"
+description = "Pre-upgrade check for forks of the PX4 Autopilot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "fork-preflight"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+serde_json.workspace = true
+fork-preflight-core = { path = "../core" }
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true
