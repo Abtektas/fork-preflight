@@ -1,0 +1,6 @@
+# The Python packages PX4's own Kconfig and Zenoh tools need. PX4 does not pin
+# them (Tools/setup/requirements.txt gives ranges); these are the versions its
+# CI image installs.
+kconfiglib==14.1.0
+empy==3.3.4
+pyros-genmsg==0.5.8

@@ -1,0 +1,25 @@
+{
+ "format": 1,
+ "parameter_data": {
+  "repository": "https://github.com/Abtektas/param-lineage",
+  "commit": "9801d3f8540771f984cad94f7fdfe8c40561e21f"
+ },
+ "releases": [
+  {"release": "v1.14.0", "commit": "b8c541dd7277ed735139d7d1bfb829d61fbe29fb"},
+  {"release": "v1.14.1", "commit": "beb834af2b489941409f39599a98970339f8917c"},
+  {"release": "v1.14.2", "commit": "968732477803be8a73edd13a29c8ab71458eb354"},
+  {"release": "v1.14.3", "commit": "1dacb4cdef2d7145754fc788fa8dc482eed74b40"},
+  {"release": "v1.14.4", "commit": "1555f2bd2229544c43966ab5f94879c41d8e1e01"},
+  {"release": "v1.15.0", "commit": "30e763b6780061d70a14894e3e8b06e6a656f9b8"},
+  {"release": "v1.15.1", "commit": "93eef0c78719a9ac972d46593262c76c978ed3c4"},
+  {"release": "v1.15.2", "commit": "4817c0618a1286846116e90c6eb8919efaa013cf"},
+  {"release": "v1.15.3", "commit": "80171359656faf881dc643022f61ebde734d7cb6"},
+  {"release": "v1.15.4", "commit": "99c40407ffd7ac184e2d7b4b293f36f10fe561ef"},
+  {"release": "v1.16.0", "commit": "6ea3539157ca358c70a515878b77077af7d4611d"},
+  {"release": "v1.16.1", "commit": "94cb2012792b2ae89f0b147cfee53ee31ae550be"},
+  {"release": "v1.16.2", "commit": "54f0455ffcd755534539a7cf33a09a20bf71d29d"},
+  {"release": "v1.17.0", "commit": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4"},
+  {"release": "v1.18.0-rc1", "commit": "fca3df865af36124a28c9d607e850f111dbaaea9"},
+  {"release": "main", "commit": "95a0c23482329183d932ac99da00faa7e8d63143"}
+ ]
+}
