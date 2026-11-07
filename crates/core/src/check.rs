@@ -69,7 +69,8 @@ pub struct Finding {
     pub line: usize,
     pub symbol: String,
     pub text: String,
-    /// Whether the base release defines the symbol; null without a base or base data.
+    /// Whether the base release defines the symbol; without a base release, for a Kconfig
+    /// symbol, whether the fork point's tree does. Null when neither tells.
     pub defined_at_base: Option<bool>,
     pub message: String,
     /// What the data knows about a successor, when it knows something.
@@ -186,11 +187,17 @@ pub fn run(
         skipped.push(format!("{RULE_COMMAND_REMOVED}: needs a base release"));
     }
 
+    // Without a base release, Kconfig definitions come from the fork point's own tree.
+    let fork_point_tree = match (&fork_point, base) {
+        (Some(point), None) if !boards.is_empty() => Some(TreeSymbols::read(repo, &point.commit)?),
+        _ => None,
+    };
     let context = Context {
         base,
         target,
         releases,
         fork: &fork,
+        fork_point_tree: fork_point_tree.as_ref(),
     };
     let mut findings = Vec::new();
     let paths: Vec<&str> = boards.iter().map(|(p, _)| p.as_str()).collect();
@@ -373,6 +380,72 @@ struct Context<'a> {
     target: &'a Release,
     releases: &'a BTreeMap<String, Release>,
     fork: &'a ForkDefinitions,
+    /// Kconfig definitions at the fork point, read when there is no base release.
+    fork_point_tree: Option<&'a TreeSymbols>,
+}
+
+/// Kconfig symbols that a commit's tree defines, found by text: `config NAME` and
+/// `menuconfig NAME` lines in every `Kconfig*` file, a file under `boards/<vendor>/<model>/`
+/// counting for that board only. `nuttx-config/` files hold NuttX's board options, not
+/// PX4's, and are left out. On every data release this equals the data's kconfiglib set,
+/// except for one file no Kconfig sources (`DRIVERS_GHST_RC` of two modalai boards).
+struct TreeSymbols {
+    commit: String,
+    common: BTreeSet<String>,
+    boards: BTreeMap<String, BTreeSet<String>>,
+    /// The tree generates its Zenoh topic symbols at build time (`$(ZENOH_KCONFIG_TOPICS)`).
+    generates_zenoh_topics: bool,
+}
+
+const ZENOH_TOPIC_PREFIX: &str = "ZENOH_PUBSUB_";
+
+impl TreeSymbols {
+    fn read(repo: &Repo, commit: &str) -> Result<TreeSymbols, String> {
+        let files: Vec<String> = repo
+            .blob_files(commit)?
+            .into_iter()
+            .filter(|path| {
+                let name = path.rsplit('/').next().unwrap_or(path);
+                name.starts_with("Kconfig") && !path.split('/').any(|part| part == "nuttx-config")
+            })
+            .collect();
+        let paths: Vec<&str> = files.iter().map(String::as_str).collect();
+        let mut tree = TreeSymbols {
+            commit: commit.to_string(),
+            common: BTreeSet::new(),
+            boards: BTreeMap::new(),
+            generates_zenoh_topics: false,
+        };
+        for (path, content) in files.iter().zip(repo.show_many(commit, &paths)?) {
+            tree.generates_zenoh_topics |= content.contains("$(ZENOH_KCONFIG_TOPICS)");
+            let parts: Vec<&str> = path.split('/').collect();
+            let symbols = match parts.as_slice() {
+                ["boards", vendor, model, _, ..] => {
+                    tree.boards.entry(format!("{vendor}/{model}")).or_default()
+                }
+                _ => &mut tree.common,
+            };
+            symbols.extend(
+                kconfig_definitions(&content)
+                    .into_iter()
+                    .filter(|name| name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')),
+            );
+        }
+        Ok(tree)
+    }
+
+    /// Whether the tree defines a symbol; None for a Zenoh topic symbol of a tree that
+    /// generates them.
+    fn defines(&self, symbol: &str, board: Option<&str>) -> Option<bool> {
+        let found = self.common.contains(symbol)
+            || board
+                .and_then(|board| self.boards.get(board))
+                .is_some_and(|symbols| symbols.contains(symbol));
+        if !found && self.generates_zenoh_topics && symbol.starts_with(ZENOH_TOPIC_PREFIX) {
+            return None;
+        }
+        Some(found)
+    }
 }
 
 /// Whether a name is `<stem><n>` (n >= 1) of a family whose `<stem>1` the data has, such as
@@ -405,15 +478,32 @@ impl Context<'_> {
             {
                 continue;
             }
-            let defined_at_base = base.map(|b| b.defines_symbol(symbol, board.as_deref()));
-            let message = match (base, defined_at_base) {
-                (Some(base), Some(true)) => format!(
-                    "{symbol} is not defined in {}; {} defines it, so it was removed or renamed in between",
-                    target.release, base.release
+            // What the definitions were checked against, and the word before it.
+            let (defined_at_base, at) = match (base, self.fork_point_tree) {
+                (Some(base), _) => (
+                    Some(base.defines_symbol(symbol, board.as_deref())),
+                    Some(("in", base.release.clone())),
                 ),
-                (Some(base), _) => format!(
-                    "{symbol} is not defined in {} nor in {}",
-                    target.release, base.release
+                (None, Some(tree)) => (
+                    tree.defines(symbol, board.as_deref()),
+                    Some((
+                        "at",
+                        format!(
+                            "the fork point {}",
+                            &tree.commit[..tree.commit.len().min(10)]
+                        ),
+                    )),
+                ),
+                (None, None) => (None, None),
+            };
+            let message = match (at, defined_at_base) {
+                (Some((_, at)), Some(true)) => format!(
+                    "{symbol} is not defined in {}; {at} defines it, so it was removed or renamed in between",
+                    target.release
+                ),
+                (Some((word, at)), Some(false)) => format!(
+                    "{symbol} is not defined in {} nor {word} {at}",
+                    target.release
                 ),
                 _ => format!("{symbol} is not defined in {}", target.release),
             };

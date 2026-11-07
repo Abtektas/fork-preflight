@@ -157,6 +157,27 @@ impl Repo {
 
     /// The contents of several files in HEAD, read with one `git cat-file --batch`.
     pub fn show_head_many(&self, paths: &[&str]) -> Result<Vec<String>, String> {
+        self.show_many("HEAD", paths)
+    }
+
+    /// Every blob (no submodule or symlink entry) in the tree of a commit.
+    pub fn blob_files(&self, commit: &str) -> Result<Vec<String>, String> {
+        let out = self.run(&["ls-tree", "-r", "-z", commit])?;
+        let mut files: Vec<String> = out
+            .split('\0')
+            .filter_map(|entry| {
+                let (meta, path) = entry.split_once('\t')?;
+                let mut meta = meta.split(' ');
+                let mode = meta.next()?;
+                (meta.next()? == "blob" && mode != "120000").then(|| path.to_string())
+            })
+            .collect();
+        files.sort();
+        Ok(files)
+    }
+
+    /// The contents of several files in the tree of `rev`, read with one `git cat-file --batch`.
+    pub fn show_many(&self, rev: &str, paths: &[&str]) -> Result<Vec<String>, String> {
         let mut child = Command::new("git")
             .arg("-C")
             .arg(&self.path)
@@ -171,7 +192,7 @@ impl Repo {
             if path.contains('\n') {
                 return Err(format!("file name with a newline: {path:?}"));
             }
-            request.push_str(&format!("HEAD:{path}\n"));
+            request.push_str(&format!("{rev}:{path}\n"));
         }
         let mut stdin = child.stdin.take().expect("piped stdin");
         let writer = std::thread::spawn(move || stdin.write_all(request.as_bytes()));
@@ -201,7 +222,7 @@ impl Repo {
             rest = &rest[end + 1..];
             let size: usize = match header.rsplit(' ').next().map(str::parse) {
                 Some(Ok(size)) if header.split(' ').nth(1) == Some("blob") => size,
-                _ => return Err(format!("git cat-file HEAD:{path}: {header}")),
+                _ => return Err(format!("git cat-file {rev}:{path}: {header}")),
             };
             if rest.len() < size + 1 {
                 return Err("git cat-file: truncated output".into());

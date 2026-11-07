@@ -1015,3 +1015,128 @@ fn kconfig_hint_says_when_the_target_defines_no_successor() {
         )]
     );
 }
+
+/// A fork of upstream main whose fork point has Kconfig files: common, board-local, NuttX
+/// board options and a Zenoh topic catalog generated at build time. Returns the fork (its
+/// `base` is the release commit), the fork point and a later main commit.
+fn main_fork_with_kconfig() -> (Fork, String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    git(path, &["init", "-q", "-b", "main"]);
+    write(
+        path,
+        "Kconfig",
+        "config KEEP\n\tbool \"k\"\nconfig UP_GONE\n\tbool \"g\"\n",
+    );
+    write(
+        path,
+        "src/modules/zenoh/Kconfig",
+        "menuconfig ZENOH_PUBSUB_ALL\n\tbool \"all\"\nosource \"$(ZENOH_KCONFIG_TOPICS)\"\n",
+    );
+    write(
+        path,
+        "Tools/zenoh/templates/zenoh/Kconfig.topics.em",
+        "config ZENOH_PUBSUB_@(topic_name.upper())\n",
+    );
+    write(
+        path,
+        "boards/acme/x1/Kconfig",
+        "config BOARD_ONLY\n\tbool \"b\"\n",
+    );
+    write(
+        path,
+        "boards/acme/x1/nuttx-config/Kconfig",
+        "config NUTTX_ONLY\n\tbool \"n\"\n",
+    );
+    commit(path, "upstream");
+    git(path, &["checkout", "-q", "-b", "release"]);
+    write(path, "release-notes.txt", "1.0\n");
+    let release_commit = commit(path, "release v1.0.0");
+    git(path, &["checkout", "-q", "main"]);
+    write(path, "later.txt", "x\n");
+    let fork_point = commit(path, "upstream main moves on");
+    write(path, "later.txt", "y\n");
+    let later_main = commit(path, "upstream main, later");
+    git(path, &["checkout", "-q", "-b", "fork", &fork_point]);
+    write(
+        path,
+        "boards/acme/x1/default.px4board",
+        "CONFIG_KEEP=y\nCONFIG_UP_GONE=y\nCONFIG_NEVER=y\nCONFIG_BOARD_ONLY=y\nCONFIG_NUTTX_ONLY=y\nCONFIG_ZENOH_PUBSUB_VEHICLE_STATUS=y\nCONFIG_ZENOH_PUBSUB_ALL=y\n",
+    );
+    write(
+        path,
+        "boards/other/y/default.px4board",
+        "CONFIG_BOARD_ONLY=y\n",
+    );
+    commit(path, "fork work");
+    let repo = Repo::open(path).unwrap();
+    (
+        Fork {
+            _dir: dir,
+            repo,
+            base: release_commit,
+        },
+        fork_point,
+        later_main,
+    )
+}
+
+#[test]
+fn fork_of_main_checks_kconfig_definitions_at_the_fork_point() {
+    let (f, fork_point, later_main) = main_fork_with_kconfig();
+    let data: BTreeMap<String, Release> = [
+        release("v1.0.0", &f.base, &["KEEP", "UP_GONE"], &[]),
+        release_removing(
+            "v1.1.0",
+            "v1.0.0",
+            &["KEEP", "UP_NEW"],
+            &[("UP_GONE", Some("renamed"), &["UP_NEW"], &[])],
+        ),
+        release("main", &later_main, &["KEEP", "UP_NEW"], &[]),
+    ]
+    .into_iter()
+    .collect();
+    let report = check::run(&f.repo, &data, &opts("v1.1.0", None)).unwrap();
+    assert_eq!(report.base, None);
+    assert_eq!(report.fork_point.as_ref().unwrap().commit, fork_point);
+    let x1 = "boards/acme/x1/default.px4board".to_string();
+    assert_eq!(
+        summary(&report.findings),
+        vec![
+            (x1.clone(), 2, "UP_GONE".into(), Some(true)),
+            (x1.clone(), 3, "NEVER".into(), Some(false)),
+            (x1.clone(), 4, "BOARD_ONLY".into(), Some(true)),
+            // NuttX board options are not PX4 Kconfig symbols.
+            (x1.clone(), 5, "NUTTX_ONLY".into(), Some(false)),
+            // Generated at build time from the msg files: the text search cannot tell.
+            (x1.clone(), 6, "ZENOH_PUBSUB_VEHICLE_STATUS".into(), None),
+            (x1.clone(), 7, "ZENOH_PUBSUB_ALL".into(), Some(true)),
+            // A board-local definition counts only for its own board.
+            (
+                "boards/other/y/default.px4board".into(),
+                1,
+                "BOARD_ONLY".into(),
+                Some(false)
+            ),
+        ]
+    );
+    let short = &fork_point[..10];
+    let gone = &report.findings[0];
+    assert_eq!(
+        gone.message,
+        format!("UP_GONE is not defined in v1.1.0; the fork point {short} defines it, so it was removed or renamed in between")
+    );
+    assert_eq!(
+        gone.hint.as_deref(),
+        Some("removed in v1.1.0 by v110aaaaaa (change in v1.1.0); renamed to UP_NEW")
+    );
+    assert_eq!(
+        report.findings[1].message,
+        format!("NEVER is not defined in v1.1.0 nor at the fork point {short}")
+    );
+    assert_eq!(
+        report.findings[4].message,
+        "ZENOH_PUBSUB_VEHICLE_STATUS is not defined in v1.1.0"
+    );
+    assert_eq!(report.findings[4].hint, None);
+}

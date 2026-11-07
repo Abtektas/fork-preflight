@@ -32,8 +32,10 @@ target/release/fork-preflight --target v1.18.0-rc1 path/to/fork
   PX4's `main` branch contains no release commit; then the fork point is the
   merge-base of HEAD and the data's `main` commit, which the repository must
   have (`git fetch https://github.com/PX4/PX4-Autopilot.git main`). Without a
-  release base, `command-removed` is skipped and "defined at base" is unknown.
-  The report names the fork point and how it was chosen.
+  release base, `command-removed` is skipped, `kconfig-undefined` asks the
+  fork point's tree whether it defined the symbol (see below), and "defined
+  at base" is unknown for parameters. The report names the fork point and
+  how it was chosen.
 - A fork point on `main` that the target does not contain (the fork left
   `main` after the target's release branch was cut) stops with an error: the
   fork already has upstream work the target lacks, so it is not an upgrade.
@@ -62,7 +64,17 @@ and `target/`, `platforms/nuttx/init/` and `posix-configs/`, without
 here-documents and quoted text are not read; a name with `$` is not checked.
 
 Each finding says whether the base release defined the name ("removed or
-renamed in between") or not (a typo, or older rot). A `param-removed` finding
+renamed in between") or not (a typo, or older rot). Without a release base,
+a `kconfig-undefined` finding says the same about the fork point ("the fork
+point <commit> defines it", "nor at the fork point <commit>"). The data has no
+tree there, so the scanner reads the fork point's own `Kconfig*` files with
+git and takes their `config`/`menuconfig` lines, a file under
+`boards/<vendor>/<model>/` counting for that board only and `nuttx-config/`
+files (NuttX options) left out. On every data release this text search
+gives the data's kconfiglib set, except one file no Kconfig sources
+(`DRIVERS_GHST_RC` on two modalai boards); a Zenoh topic symbol
+(`ZENOH_PUBSUB_*`) of a tree that generates them at build time stays
+unknown. A `param-removed` finding
 carries what [param-lineage](https://github.com/Abtektas/param-lineage)
 records about the removal: its kind (`migrated`: PX4 converts a stored
 value; `renamed`: a successor exists but PX4 does not convert the value;
@@ -104,6 +116,10 @@ What the data does not cover:
   successor that already existed before the removal, a rename on one board
   only, or a split into several new symbols is not found; the hint then
   names only the removing commits. Board-only symbols get no removal record.
+- **Kconfig at a fork point.** The text search does not follow `source`
+  lines, so a `Kconfig*` file that nothing sources still counts, and
+  definitions generated at build time other than the Zenoh topics are not
+  seen. Parameters at a fork point are not known.
 - **Builtins.** Shell builtins and commands that are not PX4 modules
   (`echo`, `set`, `list_files`) are never reported.
 - **History that hides upstream work.** The change set comes from git

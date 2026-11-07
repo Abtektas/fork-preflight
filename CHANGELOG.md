@@ -34,3 +34,8 @@
   `kconfig-undefined` findings for a symbol the base defined carry this as a
   hint, following successors to the target. The generator needs a full PX4
   clone and records the git version.
+- A fork of `main` (no release base) gets `defined_at_base` for
+  `kconfig-undefined` from the fork point's own Kconfig files, read with git:
+  "already undefined at the fork point" and "removed in between" (with the
+  removal hint) instead of unknown. Zenoh topic symbols that the fork point
+  generates at build time stay unknown.
