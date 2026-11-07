@@ -69,6 +69,30 @@ impl Repo {
             .is_ok()
     }
 
+    /// The full commit id of a revision, or an error when the repository does not have it.
+    pub fn resolve_commit(&self, rev: &str) -> Result<String, String> {
+        if rev.starts_with('-') {
+            return Err(format!("not a revision: {rev}"));
+        }
+        self.run(&[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            &format!("{rev}^{{commit}}"),
+        ])
+        .map(|out| out.trim().to_string())
+        .map_err(|_| format!("the repository has no commit {rev}"))
+    }
+
+    /// The best common ancestor of HEAD and `commit`, if they have one.
+    pub fn merge_base_with_head(&self, commit: &str) -> Option<String> {
+        self.run(&["merge-base", "HEAD", commit])
+            .ok()
+            .map(|out| out.trim().to_string())
+            .filter(|out| !out.is_empty())
+    }
+
     /// Files added or modified between `base` and HEAD (renames count as added).
     pub fn changed_files(&self, base: &str) -> Result<Vec<ChangedFile>, String> {
         let out = self.run(&["diff", "--no-renames", "--name-status", "-z", base, "HEAD"])?;

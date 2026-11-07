@@ -135,6 +135,7 @@ fn changed_lines_and_added_files_only() {
         base: None,
         target: "v1.1.0".into(),
         all_files: false,
+        fork_point: None,
     };
     let report = check::run(&f.repo, &releases(&f.base), &options).unwrap();
     assert_eq!(report.base.as_deref(), Some("v1.0.0"));
@@ -174,6 +175,7 @@ fn all_files_also_reports_upstream_lines() {
         base: None,
         target: "v1.1.0".into(),
         all_files: true,
+        fork_point: None,
     };
     let report = check::run(&f.repo, &releases(&f.base), &options).unwrap();
     let symbols: Vec<String> = report.findings.iter().map(|f| f.symbol.clone()).collect();
@@ -189,6 +191,7 @@ fn all_files_without_any_known_base() {
         base: None,
         target: "v1.1.0".into(),
         all_files: true,
+        fork_point: None,
     };
     let report = check::run(&f.repo, &data, &options).unwrap();
     assert_eq!(report.base, None);
@@ -211,6 +214,7 @@ fn errors_are_clear() {
                 base: base.map(String::from),
                 target: target.into(),
                 all_files: false,
+                fork_point: None,
             },
         )
         .unwrap_err()
@@ -233,6 +237,7 @@ fn errors_are_clear() {
             base: None,
             target: "v1.1.0".into(),
             all_files: false,
+            fork_point: None,
         },
     )
     .unwrap_err();
@@ -244,6 +249,7 @@ fn errors_are_clear() {
             base: Some("v1.0.0".into()),
             target: "v1.1.0".into(),
             all_files: false,
+            fork_point: None,
         },
     )
     .unwrap_err();
@@ -271,6 +277,7 @@ fn newest_ancestor_release_is_the_base() {
             base: None,
             target: "v1.1.0".into(),
             all_files: false,
+            fork_point: None,
         },
     )
     .unwrap();
@@ -408,6 +415,7 @@ fn scripts_parameters_and_commands() {
         base: None,
         target: "v1.1.0".into(),
         all_files: false,
+        fork_point: None,
     };
     let report = check::run(&f.repo, &script_releases(&f.base, true), &options).unwrap();
     assert!(report.skipped.is_empty());
@@ -466,6 +474,7 @@ fn rules_without_their_data_are_skipped() {
             base: None,
             target: "v1.1.0".into(),
             all_files: false,
+            fork_point: None,
         },
     )
     .unwrap();
@@ -483,6 +492,7 @@ fn rules_without_their_data_are_skipped() {
             base: None,
             target: "v1.1.0".into(),
             all_files: true,
+            fork_point: None,
         },
     )
     .unwrap();
@@ -494,4 +504,311 @@ fn rules_without_their_data_are_skipped() {
         ["GONE_P", "ACME_EN", "ACME_2_ID", "TYPO_P", "GONE_P"]
     );
     assert!(report.findings.iter().all(|f| f.defined_at_base.is_none()));
+}
+
+fn opts(target: &str, fork_point: Option<&str>) -> Options {
+    Options {
+        base: None,
+        target: target.into(),
+        all_files: false,
+        fork_point: fork_point.map(String::from),
+    }
+}
+
+/// A fork of upstream's main branch (seen in the P4 fork corpus). The release commit
+/// sits on a release branch, so no release is an ancestor of HEAD. Returns the fork, the
+/// release commit, the fork point on main and a later main commit.
+fn main_fork() -> (Fork, String, String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    git(path, &["init", "-q", "-b", "main"]);
+    write(
+        path,
+        "ROMFS/px4fmu_common/init.d/rcS",
+        "param set-default OLD_UP 1\n",
+    );
+    commit(path, "upstream");
+    git(path, &["checkout", "-q", "-b", "release"]);
+    write(path, "release-notes.txt", "1.0\n");
+    let release_commit = commit(path, "release v1.0.0");
+    git(path, &["checkout", "-q", "main"]);
+    write(
+        path,
+        "ROMFS/px4fmu_common/init.d/rcS",
+        "param set-default OLD_UP 1\nparam set-default UP_GONE 1\n",
+    );
+    let fork_point = commit(path, "upstream main moves on");
+    write(path, "later.txt", "x\n");
+    let later_main = commit(path, "upstream main, later");
+    git(path, &["checkout", "-q", "-b", "fork", &fork_point]);
+    write(
+        path,
+        "src/modules/acme_gyro/acme_gyro_params.c",
+        "PARAM_DEFINE_INT32(ACME_TKOFF, 0);\n",
+    );
+    write(
+        path,
+        "ROMFS/px4fmu_common/init.d/airframes/9002_acme_gyro",
+        "param set-default ACME_TKOFF 1\nparam set-default UP_GONE 2\n",
+    );
+    commit(path, "fork work");
+    let repo = Repo::open(path).unwrap();
+    (
+        Fork {
+            _dir: dir,
+            repo,
+            base: release_commit.clone(),
+        },
+        release_commit,
+        fork_point,
+        later_main,
+    )
+}
+
+fn main_releases(release_commit: &str, main_commit: &str) -> BTreeMap<String, Release> {
+    [
+        release_with(
+            "v1.0.0",
+            release_commit,
+            &[],
+            Some((&["OLD_UP", "UP_GONE"], &[])),
+        ),
+        release_with(
+            "v1.1.0",
+            "0000000000000000000000000000000000000001",
+            &[],
+            Some((&["OLD_UP"], &[])),
+        ),
+        release_with("main", main_commit, &[], None),
+    ]
+    .into_iter()
+    .collect()
+}
+
+#[test]
+fn fork_of_main_starts_at_the_merge_base_with_main() {
+    let (f, release_commit, fork_point, later_main) = main_fork();
+    let report = check::run(
+        &f.repo,
+        &main_releases(&release_commit, &later_main),
+        &opts("v1.1.0", None),
+    )
+    .unwrap();
+    assert_eq!(report.base, None);
+    let point = report.fork_point.as_ref().unwrap();
+    assert_eq!(point.commit, fork_point);
+    assert!(point
+        .from
+        .starts_with("merge-base of HEAD and the data's main"));
+    // The fork's own ACME_TKOFF definition counts; upstream's rcS line is not the fork's.
+    assert_eq!(
+        rule_summary(&report.findings),
+        vec![(
+            "param-removed",
+            "ROMFS/px4fmu_common/init.d/airframes/9002_acme_gyro".into(),
+            2,
+            "UP_GONE".into(),
+            None
+        )]
+    );
+    assert_eq!(report.skipped, ["command-removed: needs a base release"]);
+}
+
+#[test]
+fn fork_point_option_and_its_errors() {
+    let (f, release_commit, fork_point, later_main) = main_fork();
+    // Without the main commit in the data, the error names both ways out.
+    let mut data = main_releases(&release_commit, &later_main);
+    data.remove("main");
+    let err = check::run(&f.repo, &data, &opts("v1.1.0", None)).unwrap_err();
+    assert!(
+        err.contains("--base") && err.contains("--fork-point"),
+        "{err}"
+    );
+    // A main commit the repository does not have: the error says to fetch it.
+    let missing = main_releases(&release_commit, "3333333333333333333333333333333333333333");
+    let err = check::run(&f.repo, &missing, &opts("v1.1.0", None)).unwrap_err();
+    assert!(err.contains("fetch PX4's main branch"), "{err}");
+    // --fork-point takes the fork point itself, or the upstream branch the fork left: its
+    // tip is past the fork point, and the change set must not take upstream's later work.
+    for rev in ["main~1", "main"] {
+        let report = check::run(&f.repo, &missing, &opts("v1.1.0", Some(rev))).unwrap();
+        let point = report.fork_point.unwrap();
+        assert_eq!(
+            (point.commit.as_str(), point.from.as_str()),
+            (
+                fork_point.as_str(),
+                format!("merge-base of HEAD and --fork-point {rev}").as_str()
+            )
+        );
+        assert_eq!(report.findings.len(), 1, "{rev}");
+    }
+    let err = check::run(&f.repo, &missing, &opts("v1.1.0", Some("no-such-rev"))).unwrap_err();
+    assert!(err.contains("no commit no-such-rev"), "{err}");
+    let err = check::run(&f.repo, &missing, &opts("v1.1.0", Some("--all"))).unwrap_err();
+    assert!(err.contains("not a revision"), "{err}");
+    let path = f.repo_path();
+    git(&path, &["checkout", "-q", "--orphan", "unrelated"]);
+    write(&path, "other.txt", "x\n");
+    let unrelated = commit(&path, "unrelated root");
+    git(&path, &["checkout", "-q", "fork"]);
+    let err = check::run(&f.repo, &missing, &opts("v1.1.0", Some(&unrelated))).unwrap_err();
+    assert!(err.contains("no history in common with HEAD"), "{err}");
+    // With a release base, the fork point still overrides where the change set starts.
+    let report = check::run(
+        &f.repo,
+        &missing,
+        &Options {
+            base: Some("v1.0.0".into()),
+            ..opts("v1.1.0", Some(&release_commit))
+        },
+    )
+    .unwrap();
+    assert_eq!(report.base.as_deref(), Some("v1.0.0"));
+    // From the release commit, upstream main's own UP_GONE line in rcS is in the change set too.
+    let symbols: Vec<(&str, Option<bool>)> = report
+        .findings
+        .iter()
+        .map(|f| (f.file.as_str(), f.defined_at_base))
+        .collect();
+    assert_eq!(
+        symbols,
+        [
+            (
+                "ROMFS/px4fmu_common/init.d/airframes/9002_acme_gyro",
+                Some(true)
+            ),
+            ("ROMFS/px4fmu_common/init.d/rcS", Some(true)),
+        ]
+    );
+}
+
+#[test]
+fn fork_of_a_main_mirror_has_no_changes() {
+    // A mirror of upstream main (P4 corpus controls): HEAD is an ancestor of upstream main.
+    let (f, release_commit, fork_point, later_main) = main_fork();
+    git(&f.repo_path(), &["checkout", "-q", "--detach", &fork_point]);
+    let report = check::run(
+        &f.repo,
+        &main_releases(&release_commit, &later_main),
+        &opts("v1.1.0", None),
+    )
+    .unwrap();
+    assert_eq!(report.fork_point.unwrap().commit, fork_point);
+    assert_eq!((report.files_checked, report.findings.len()), (0, 0));
+}
+
+#[test]
+fn names_defined_by_upstream_lines_of_a_fork_modified_file_get_a_hint() {
+    // Seen in the P4 corpus: the fork extends an upstream module's parameter file that the
+    // target removes, and its airframes set the module's upstream parameters.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path();
+    git(path, &["init", "-q"]);
+    write(
+        path,
+        "src/modules/rover/rover_params.c",
+        "PARAM_DEFINE_FLOAT(GND_L1_DIST, 5.0f);\n",
+    );
+    write(
+        path,
+        "src/modules/rover/Kconfig",
+        "menuconfig MODULES_ROVER\n\tbool \"r\"\n",
+    );
+    write(
+        path,
+        "src/modules/rover/CMakeLists.txt",
+        "px4_add_module(\n\tMODULE rover\n\tMAIN rover_ctl\n)\n",
+    );
+    let base = commit(path, "upstream release");
+    write(
+        path,
+        "src/modules/rover/rover_params.c",
+        "PARAM_DEFINE_FLOAT(GND_L1_DIST, 5.0f);\nPARAM_DEFINE_INT32(GND_VEL_CTRL, 0);\n",
+    );
+    write(
+        path,
+        "src/modules/rover/Kconfig",
+        "menuconfig MODULES_ROVER\n\tbool \"rover\"\n",
+    );
+    write(
+        path,
+        "src/modules/rover/CMakeLists.txt",
+        "px4_add_module(\n\tMODULE rover\n\tMAIN rover_ctl\n\tSRCS r.cpp\n)\n",
+    );
+    write(
+        path,
+        "ROMFS/px4fmu_common/init.d/airframes/50005_rover",
+        "param set-default GND_L1_DIST 5\nparam set-default GND_VEL_CTRL 1\nrover_ctl start\n",
+    );
+    write(
+        path,
+        "boards/acme/r1/default.px4board",
+        "CONFIG_MODULES_ROVER=y\n",
+    );
+    commit(path, "fork work");
+    let repo = Repo::open(path).unwrap();
+    let mut data: BTreeMap<String, Release> = [
+        release_with(
+            "v1.0.0",
+            &base,
+            &[("rover_ctl", "src/modules/rover/CMakeLists.txt")],
+            Some((&["GND_L1_DIST"], &[("X", "removed", &[])])),
+        ),
+        release_with(
+            "v1.1.0",
+            "0000000000000000000000000000000000000001",
+            &[],
+            Some((&[], &[("GND_L1_DIST", "removed", &[])])),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    data.get_mut("v1.0.0")
+        .unwrap()
+        .kconfig
+        .symbols
+        .insert("MODULES_ROVER".into());
+    let report = check::run(&repo, &data, &opts("v1.1.0", None)).unwrap();
+    let got: Vec<(&str, &str, Option<&str>)> = report
+        .findings
+        .iter()
+        .map(|f| (f.rule, f.symbol.as_str(), f.hint.as_deref()))
+        .collect();
+    let kept = |file: &str| {
+        format!("the fork modified {file}, which defines it in lines the fork did not change; it stays defined only if the fork keeps that definition through the merge")
+    };
+    // GND_VEL_CTRL is the fork's own (added line) and not reported.
+    assert_eq!(
+        got,
+        vec![
+            (
+                "param-removed",
+                "GND_L1_DIST",
+                Some(
+                    format!(
+                        "param-lineage: removed in v1.1.0 (removed); {}",
+                        kept("src/modules/rover/rover_params.c")
+                    )
+                    .as_str()
+                )
+            ),
+            (
+                "command-removed",
+                "rover_ctl",
+                Some(
+                    format!(
+                        "v1.0.0 declares it in src/modules/rover/CMakeLists.txt; {}",
+                        kept("src/modules/rover/CMakeLists.txt")
+                    )
+                    .as_str()
+                )
+            ),
+            (
+                "kconfig-undefined",
+                "MODULES_ROVER",
+                Some(kept("src/modules/rover/Kconfig").as_str())
+            ),
+        ]
+    );
 }

@@ -25,6 +25,11 @@ struct Cli {
     /// Release the fork is based on [default: newest data release that HEAD contains]
     #[arg(long)]
     base: Option<String>,
+    /// Where the fork left upstream: that commit, or the upstream branch (the change set starts at
+    /// the merge-base of HEAD and REV) [default: the base release, else the merge-base of HEAD
+    /// and the data's main commit]
+    #[arg(long, value_name = "REV")]
+    fork_point: Option<String>,
     /// Check every board file and script in HEAD, not only the lines the fork added or changed since the base
     #[arg(long)]
     all_files: bool,
@@ -84,6 +89,7 @@ fn run(cli: Cli) -> Result<u8, String> {
         base: cli.base,
         target: cli.target.expect("clap requires --target"),
         all_files: cli.all_files,
+        fork_point: cli.fork_point,
     };
     let report = check::run(&repo, &releases, &options)?;
     if cli.json {
@@ -141,5 +147,12 @@ fn print_text(report: &check::Report) {
         report.target,
         &report.head[..report.head.len().min(10)],
     );
+    if let Some(point) = &report.fork_point {
+        println!(
+            "Changes since {} ({}).",
+            &point.commit[..point.commit.len().min(10)],
+            point.from
+        );
+    }
     println!("\n{}", legal::notice());
 }

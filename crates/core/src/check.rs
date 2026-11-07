@@ -37,6 +37,8 @@ pub struct Options {
     pub target: String,
     /// Check every board file and script in HEAD instead of the files the fork changed.
     pub all_files: bool,
+    /// Commit where the fork left upstream; the change set starts there instead of at the base release.
+    pub fork_point: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -45,10 +47,19 @@ pub struct Report {
     pub target: String,
     pub head: String,
     pub scope: &'static str,
+    /// Where the change set starts; null without one (`--all-files` without a base).
+    pub fork_point: Option<ForkPoint>,
     pub files_checked: usize,
     /// Rules that could not run, and why.
     pub skipped: Vec<String>,
     pub findings: Vec<Finding>,
+}
+
+/// The commit the change set starts at, and how it was chosen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ForkPoint {
+    pub commit: String,
+    pub from: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -93,16 +104,7 @@ pub fn run(
     let target = known(releases, &options.target)?;
     let base_name = match &options.base {
         Some(name) => Some(name.clone()),
-        None => match detect_base(repo, releases) {
-            Some(name) => Some(name.to_string()),
-            None if options.all_files => None,
-            None => {
-                return Err(
-                    "no release in the data is an ancestor of HEAD; name the base with --base"
-                        .into(),
-                )
-            }
-        },
+        None => detect_base(repo, releases).map(String::from),
     };
     let base = base_name
         .as_deref()
@@ -115,22 +117,23 @@ pub fn run(
                 target.release, base.release
             ));
         }
-        if !repo.has_commit(&base.source.commit) {
+        if options.fork_point.is_none() && !repo.has_commit(&base.source.commit) {
             return Err(format!(
                 "the repository does not have the commit of {} ({}); fetch the release tags",
                 base.release, base.source.commit
             ));
         }
     }
+    let fork_point = choose_fork_point(repo, releases, base, options)?;
 
     // Which files to read, and which of their lines; definitions the fork adds.
     let mut fork = ForkDefinitions::default();
     let mut boards: Vec<(String, Option<Vec<usize>>)> = Vec::new();
     let mut scripts: Vec<(String, Option<Vec<usize>>)> = Vec::new();
-    if let Some(base) = base {
-        let changed = repo.changed_files(&base.source.commit)?;
+    if let Some(point) = &fork_point {
+        let changed = repo.changed_files(&point.commit)?;
         let mut added = if changed.iter().any(|f| f.change == Change::Modified) {
-            repo.added_lines(&base.source.commit)?
+            repo.added_lines(&point.commit)?
         } else {
             BTreeMap::new()
         };
@@ -205,18 +208,88 @@ pub fn run(
         } else {
             "changed-files"
         },
+        fork_point,
         files_checked: boards.len() + scripts.len(),
         skipped,
         findings,
     })
 }
 
-/// Kconfig symbols, commands and parameters that the fork's own added or changed files define.
+/// Where the change set starts: `--fork-point`, else the base release's commit, else the
+/// merge-base of HEAD and the data's `main` commit (a fork of PX4's main branch).
+fn choose_fork_point(
+    repo: &Repo,
+    releases: &BTreeMap<String, Release>,
+    base: Option<&Release>,
+    options: &Options,
+) -> Result<Option<ForkPoint>, String> {
+    if let Some(rev) = &options.fork_point {
+        // The fork point itself, or an upstream branch the fork left (its tip is past the fork point).
+        let commit = repo.resolve_commit(rev)?;
+        let commit = repo
+            .merge_base_with_head(&commit)
+            .ok_or_else(|| format!("--fork-point {rev} has no history in common with HEAD"))?;
+        return Ok(Some(ForkPoint {
+            commit,
+            from: format!("merge-base of HEAD and --fork-point {rev}"),
+        }));
+    }
+    if let Some(base) = base {
+        return Ok(Some(ForkPoint {
+            commit: base.source.commit.clone(),
+            from: format!("base release {}", base.release),
+        }));
+    }
+    let main = releases.get("main").map(|m| m.source.commit.as_str());
+    if let Some(main) = main.filter(|commit| repo.has_commit(commit)) {
+        if let Some(commit) = repo.merge_base_with_head(main) {
+            return Ok(Some(ForkPoint {
+                commit,
+                from: format!(
+                    "merge-base of HEAD and the data's main {}",
+                    &main[..main.len().min(10)]
+                ),
+            }));
+        }
+    }
+    if options.all_files {
+        return Ok(None);
+    }
+    let main_hint = main
+        .map(|commit| format!(", or fetch PX4's main branch (the data's main is {commit})"))
+        .unwrap_or_default();
+    Err(format!(
+        "no release in the data is an ancestor of HEAD; name the base with --base, the commit where the fork left upstream with --fork-point{main_hint}"
+    ))
+}
+
+/// Kconfig symbols, commands and parameters that a set of definitions holds.
 #[derive(Default)]
-struct ForkDefinitions {
+struct Defined {
     symbols: BTreeSet<String>,
     commands: BTreeSet<String>,
     params: ParamDefinitions,
+}
+
+impl Defined {
+    fn add_file(&mut self, path: &str, content: &str, lines: Option<&[usize]>) {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        if name.starts_with("Kconfig") {
+            self.symbols.extend(kconfig_definitions_in(content, lines));
+        } else if name == "CMakeLists.txt" {
+            self.commands.extend(cmake_main_commands(content, lines));
+        } else {
+            self.params.add_file(path, content, lines);
+        }
+    }
+}
+
+/// What the fork's own added or changed lines define, and what the whole of each file it
+/// modified defines (upstream lines included, which the merge may drop).
+#[derive(Default)]
+struct ForkDefinitions {
+    added: Defined,
+    modified_files: Vec<(String, Defined)>,
 }
 
 impl ForkDefinitions {
@@ -231,14 +304,35 @@ impl ForkDefinitions {
     }
 
     fn add_file(&mut self, path: &str, content: &str, lines: Option<&[usize]>) {
-        let name = path.rsplit('/').next().unwrap_or(path);
-        if name.starts_with("Kconfig") {
-            self.symbols.extend(kconfig_definitions_in(content, lines));
-        } else if name == "CMakeLists.txt" {
-            self.commands.extend(cmake_main_commands(content, lines));
-        } else {
-            self.params.add_file(path, content, lines);
+        self.added.add_file(path, content, lines);
+        if lines.is_some() {
+            let mut whole = Defined::default();
+            whole.add_file(path, content, None);
+            self.modified_files.push((path.to_string(), whole));
         }
+    }
+
+    /// The fork-modified files whose upstream lines define a name, for a hint.
+    fn kept_hint(&self, defines: impl Fn(&Defined) -> bool) -> Option<String> {
+        let files: Vec<&str> = self
+            .modified_files
+            .iter()
+            .filter(|(_, defined)| defines(defined))
+            .map(|(path, _)| path.as_str())
+            .collect();
+        (!files.is_empty()).then(|| {
+            format!(
+                "the fork modified {}, which defines it in lines the fork did not change; it stays defined only if the fork keeps that definition through the merge",
+                files.join(", ")
+            )
+        })
+    }
+}
+
+fn join_hints(first: Option<String>, second: Option<String>) -> Option<String> {
+    match (first, second) {
+        (Some(a), Some(b)) => Some(format!("{a}; {b}")),
+        (a, b) => a.or(b),
     }
 }
 
@@ -274,7 +368,8 @@ impl Context<'_> {
                 continue;
             }
             let symbol = assignment.symbol.as_str();
-            if target.defines_symbol(symbol, board.as_deref()) || self.fork.symbols.contains(symbol)
+            if target.defines_symbol(symbol, board.as_deref())
+                || self.fork.added.symbols.contains(symbol)
             {
                 continue;
             }
@@ -298,7 +393,7 @@ impl Context<'_> {
                 text: assignment.text,
                 defined_at_base,
                 message,
-                hint: None,
+                hint: self.fork.kept_hint(|d| d.symbols.contains(symbol)),
             });
         }
         findings
@@ -326,7 +421,7 @@ impl Context<'_> {
         let base = self.base?;
         let name = command.command.as_str();
         let declared_at_base = base.commands.get(name)?;
-        if self.target.commands.contains_key(name) || self.fork.commands.contains(name) {
+        if self.target.commands.contains_key(name) || self.fork.added.commands.contains(name) {
             return None;
         }
         let mut hint = format!(
@@ -360,7 +455,10 @@ impl Context<'_> {
                 "{name} is not a command in {}; {} has it, so its module was removed or renamed in between",
                 self.target.release, base.release
             ),
-            hint: Some(hint),
+            hint: join_hints(
+                Some(hint),
+                self.fork.kept_hint(|d| d.commands.contains(name)),
+            ),
         })
     }
 
@@ -372,7 +470,7 @@ impl Context<'_> {
     ) -> Option<Finding> {
         let target_params = self.target.parameters.as_ref()?;
         let name = used.name.as_str();
-        if target_params.names.contains(name) || self.fork.params.contains(name) {
+        if target_params.names.contains(name) || self.fork.added.params.contains(name) {
             return None;
         }
         let defined_at_base = self
@@ -409,7 +507,10 @@ impl Context<'_> {
             text: command.text.clone(),
             defined_at_base,
             message,
-            hint: self.removal_hint(name),
+            hint: join_hints(
+                self.removal_hint(name),
+                self.fork.kept_hint(|d| d.params.contains(name)),
+            ),
         })
     }
 

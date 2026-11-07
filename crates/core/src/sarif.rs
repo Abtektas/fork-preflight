@@ -75,6 +75,7 @@ pub fn to_sarif(report: &Report, tool_version: &str, information_uri: &str) -> V
                 "target": report.target,
                 "head": report.head,
                 "scope": report.scope,
+                "forkPoint": report.fork_point,
                 "filesChecked": report.files_checked,
                 "notice": legal::notice(),
             },

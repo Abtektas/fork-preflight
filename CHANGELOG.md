@@ -18,3 +18,10 @@
 - Fork definitions in Kconfig, `CMakeLists.txt`, C/C++ and YAML module
   configs count as defined. Rules without data are reported as skipped.
 - `--sarif` (SARIF 2.1.0) and a composite GitHub Action (`action.yml`).
+- `--fork-point REV` (Action input `fork-point`): the change set starts at the
+  merge-base of HEAD and REV. A fork of PX4's main branch, where no release
+  is an ancestor of HEAD, starts at the merge-base with the data's `main`
+  commit instead of stopping with an error. Reports name the fork point.
+- A finding whose name only upstream lines of a fork-modified file define
+  gets a hint naming that file (found on a fork that extends a module the
+  target release removes).

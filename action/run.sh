@@ -39,6 +39,9 @@ args=(--target "$FP_TARGET")
 if [ -n "${FP_BASE:-}" ]; then
 	args+=(--base "$FP_BASE")
 fi
+if [ -n "${FP_FORK_POINT:-}" ]; then
+	args+=(--fork-point "$FP_FORK_POINT")
+fi
 if [ "$FP_ALL_FILES" = true ]; then
 	args+=(--all-files)
 fi

@@ -12,7 +12,8 @@ something the new release no longer defines:
 
 **Status: early development, not released.** The release data, the three
 checks, text/JSON/SARIF output and a GitHub Action exist (milestones P1 to
-P3). They have been run on PX4's own tree, not yet on real forks.
+P3). They have been run on PX4's own tree and, locally, on six public forks
+(milestone P4: false-positive review).
 
 ## Scanner
 
@@ -25,6 +26,14 @@ target/release/fork-preflight --target v1.18.0-rc1 path/to/fork
   releases in the data, which is built into the binary).
 - The base is the newest release in the data whose commit is in HEAD's
   history; `--base` names it instead.
+- The change set starts at the fork point: the base release's commit, or
+  `--fork-point REV` (the merge-base of HEAD and REV, so REV can be the commit
+  where the fork left upstream or the upstream branch itself). A fork of
+  PX4's `main` branch contains no release commit; then the fork point is the
+  merge-base of HEAD and the data's `main` commit, which the repository must
+  have (`git fetch https://github.com/PX4/PX4-Autopilot.git main`). Without a
+  release base, `command-removed` is skipped and "defined at base" is unknown.
+  The report names the fork point and how it was chosen.
 - It reads the committed state of HEAD. In files the fork added since the
   base it checks every line; in upstream files the fork modified it checks
   only the lines the fork added or changed, because the merge replaces the
@@ -59,7 +68,11 @@ the commands that file declares at the target.
 Definitions the fork adds or changes count as defined: `config`/`menuconfig`
 in Kconfig files, `MAIN` in `CMakeLists.txt`, `PARAM_DEFINE_INT32/FLOAT` in
 C/C++ files, and the names under `definitions:` (with `${i}` instances) and
-`param_prefix:` in YAML module configs.
+`param_prefix:` in YAML module configs. A name that only upstream lines of a
+file the fork modified define is still reported, with a hint naming that
+file: the merge brings upstream's version of those lines (a removed module
+means a modify/delete conflict), so the name stays defined only if the fork
+keeps the definition.
 
 What the data does not cover:
 
@@ -73,6 +86,10 @@ What the data does not cover:
   it; a script that sets one is reported as "not in the parameter data".
 - **Builtins.** Shell builtins and commands that are not PX4 modules
   (`echo`, `set`, `list_files`) are never reported.
+- **History that hides upstream work.** The change set comes from git
+  ancestry. When a fork squashes or copies newer upstream files into its own
+  commits, those files count as the fork's, and their stale lines are
+  reported too. `--fork-point` with a later upstream commit narrows it.
 
 ### Known answers on PX4 itself
 
@@ -90,7 +107,9 @@ trees: the same lines, apart from documentation pages and commented lines.
 
 [action.yml](action.yml) builds the scanner with the pinned toolchain and runs
 it on the checkout: the text report goes to the log, SARIF to a file. The
-checkout needs the history back to the base release.
+checkout needs the history back to the base release. A fork of PX4's `main`
+branch also needs the data's `main` commit: add a step that runs
+`git fetch https://github.com/PX4/PX4-Autopilot.git main`, or set `fork-point`.
 
 ```yaml
 on: pull_request
@@ -113,7 +132,7 @@ jobs:
           sarif_file: fork-preflight.sarif
 ```
 
-Inputs: `target` (required), `base`, `path`, `all-files`, `sarif-file`
+Inputs: `target` (required), `base`, `fork-point`, `path`, `all-files`, `sarif-file`
 (default `fork-preflight.sarif`), `fail-on-findings` (default `true`; errors
 always fail). Outputs: `exit-code`, `sarif-file`. A shallow clone is refused
 unless `all-files` is set. The action has been run locally, step by step,
