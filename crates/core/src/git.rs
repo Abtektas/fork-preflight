@@ -65,7 +65,12 @@ impl Repo {
 
     /// Whether `commit` is HEAD or an ancestor of it.
     pub fn is_ancestor_of_head(&self, commit: &str) -> bool {
-        self.run(&["merge-base", "--is-ancestor", commit, "HEAD"])
+        self.is_ancestor(commit, "HEAD")
+    }
+
+    /// Whether `commit` is `of` or an ancestor of it.
+    pub fn is_ancestor(&self, commit: &str, of: &str) -> bool {
+        self.run(&["merge-base", "--is-ancestor", commit, of])
             .is_ok()
     }
 

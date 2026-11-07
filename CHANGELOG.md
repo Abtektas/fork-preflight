@@ -22,6 +22,9 @@
   merge-base of HEAD and REV. A fork of PX4's main branch, where no release
   is an ancestor of HEAD, starts at the merge-base with the data's `main`
   commit instead of stopping with an error. Reports name the fork point.
+- A fork point on `main` that the target does not contain stops with an
+  error instead of reporting every name `main` added after the target's
+  release branch was cut.
 - A finding whose name only upstream lines of a fork-modified file define
   gets a hint naming that file (found on a fork that extends a module the
   target release removes).

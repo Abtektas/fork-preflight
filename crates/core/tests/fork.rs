@@ -699,6 +699,56 @@ fn fork_of_a_main_mirror_has_no_changes() {
 }
 
 #[test]
+fn fork_point_on_main_past_the_target_stops() {
+    // Seen on a fork of main from after the v1.18 release branch was cut, checked against
+    // v1.18.0-rc1: names main added after the cut read as missing in the target.
+    let (f, release_commit, fork_point, later_main) = main_fork();
+    let path = f.repo_path();
+    let with_target = |commit: &str| {
+        let mut data = main_releases(&release_commit, &later_main);
+        let (name, release) = release_with("v1.1.0", commit, &[], Some((&["OLD_UP"], &[])));
+        data.insert(name, release);
+        data
+    };
+    // Target cut from main before the fork point.
+    let early = with_target(&release_commit);
+    let err = check::run(&f.repo, &early, &opts("v1.1.0", None)).unwrap_err();
+    assert!(
+        err.contains(&format!(
+            "fork point {} is on upstream main after v1.1.0",
+            &fork_point[..10]
+        )),
+        "{err}"
+    );
+    let err = check::run(&f.repo, &early, &opts("v1.1.0", Some("main"))).unwrap_err();
+    assert!(err.contains("choose a newer target"), "{err}");
+    // The data's main as target always contains a fork point taken from it.
+    let report = check::run(&f.repo, &early, &opts("main", None)).unwrap();
+    assert_eq!(report.fork_point.unwrap().commit, fork_point);
+
+    // Target cut from main after the fork point: checked as before.
+    git(&path, &["checkout", "-q", "-b", "release-1.1", &later_main]);
+    write(&path, "release-notes.txt", "1.1\n");
+    let late_commit = commit(&path, "release v1.1.0");
+    git(&path, &["checkout", "-q", "fork"]);
+    let late = with_target(&late_commit);
+    let report = check::run(&f.repo, &late, &opts("v1.1.0", None)).unwrap();
+    assert_eq!(report.findings.len(), 1);
+    // A fork point on a release branch is not on main and passes (a fork of v1.0.0 upgrading
+    // to v1.1.0, which the v1.0.0 commit is not an ancestor of).
+    let report = check::run(
+        &f.repo,
+        &late,
+        &Options {
+            base: Some("v1.0.0".into()),
+            ..opts("v1.1.0", None)
+        },
+    )
+    .unwrap();
+    assert_eq!(report.fork_point.unwrap().commit, release_commit);
+}
+
+#[test]
 fn names_defined_by_upstream_lines_of_a_fork_modified_file_get_a_hint() {
     // Seen in the P4 corpus: the fork extends an upstream module's parameter file that the
     // target removes, and its airframes set the module's upstream parameters.

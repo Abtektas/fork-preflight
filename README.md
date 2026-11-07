@@ -34,6 +34,11 @@ target/release/fork-preflight --target v1.18.0-rc1 path/to/fork
   have (`git fetch https://github.com/PX4/PX4-Autopilot.git main`). Without a
   release base, `command-removed` is skipped and "defined at base" is unknown.
   The report names the fork point and how it was chosen.
+- A fork point on `main` that the target does not contain (the fork left
+  `main` after the target's release branch was cut) stops with an error: the
+  fork already has upstream work the target lacks, so it is not an upgrade.
+  Choose a newer target, such as `main`. The check needs the data's `main`
+  and target commits in the repository and is skipped without them.
 - It reads the committed state of HEAD. In files the fork added since the
   base it checks every line; in upstream files the fork modified it checks
   only the lines the fork added or changed, because the merge replaces the

@@ -125,6 +125,9 @@ pub fn run(
         }
     }
     let fork_point = choose_fork_point(repo, releases, base, options)?;
+    if let Some(point) = &fork_point {
+        fork_point_in_target(repo, releases, target, point)?;
+    }
 
     // Which files to read, and which of their lines; definitions the fork adds.
     let mut fork = ForkDefinitions::default();
@@ -261,6 +264,35 @@ fn choose_fork_point(
     Err(format!(
         "no release in the data is an ancestor of HEAD; name the base with --base, the commit where the fork left upstream with --fork-point{main_hint}"
     ))
+}
+
+/// A fork point on upstream main that the target does not contain: the fork left main
+/// after the target did (a release branch cut earlier), so it already has upstream work the
+/// target lacks, and every name main added since would read as missing in the target.
+/// Release-branch fork points are not on main and pass. Skipped when the repository lacks
+/// the data's main or target commit.
+fn fork_point_in_target(
+    repo: &Repo,
+    releases: &BTreeMap<String, Release>,
+    target: &Release,
+    point: &ForkPoint,
+) -> Result<(), String> {
+    let Some(main) = releases.get("main") else {
+        return Ok(());
+    };
+    let (main, target_commit) = (&main.source.commit, &target.source.commit);
+    if main == target_commit || !repo.has_commit(main) || !repo.has_commit(target_commit) {
+        return Ok(());
+    }
+    if repo.is_ancestor(&point.commit, main) && !repo.is_ancestor(&point.commit, target_commit) {
+        return Err(format!(
+            "the fork point {} is on upstream main after {} left it: the fork already has upstream work that {} lacks, so merging it is not an upgrade; choose a newer target, such as main",
+            &point.commit[..point.commit.len().min(10)],
+            target.release,
+            target.release
+        ));
+    }
+    Ok(())
 }
 
 /// Kconfig symbols, commands and parameters that a set of definitions holds.
