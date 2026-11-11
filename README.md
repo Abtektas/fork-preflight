@@ -10,20 +10,27 @@ something the new release no longer defines:
   unknown name prints an error at boot and the script goes on),
 - module commands in startup scripts whose module was removed.
 
-**Status: early development, not released.** The release data, the three
-checks, text/JSON/SARIF output and a GitHub Action exist (milestones P1 to
-P3). They have been run on PX4's own tree and, locally, on six public forks
-(milestone P4: false-positive review).
+**Status: not released yet.** The release data, the three checks,
+text/JSON/SARIF output and a GitHub Action exist. They have been run on
+PX4's own tree and, locally, on six public forks, whose findings were
+reviewed for false positives. The first release, 0.1.0, is planned together
+with data for PX4 v1.18.0; until then the newest release in the data is
+v1.18.0-rc1. [CHANGELOG.md](CHANGELOG.md) lists what it will contain.
 
 ## Scanner
 
 ```sh
-cargo build --release
+cargo build --release --locked
 target/release/fork-preflight --target v1.18.0-rc1 path/to/fork
 ```
 
+`cargo install --locked --path crates/cli` puts the same binary in
+`~/.cargo/bin`. `--help` lists the options, `--version` prints the version
+with the notices below, and `--license` prints the license texts.
+
 - `--target` is the release the fork will merge (`--list-releases` lists the
-  releases in the data, which is built into the binary).
+  releases in the data, which is built into the binary, with their PX4
+  commits).
 - The base is the newest release in the data whose commit is in HEAD's
   history; `--base` names it instead.
 - The change set starts at the fork point: the base release's commit, or
@@ -250,6 +257,9 @@ FORK_PREFLIGHT_PX4="$PWD/../PX4-Autopilot" cargo test
 `FORK_PREFLIGHT_PX4` is an absolute path to a PX4 clone with the release
 tags; without it the known-answer tests on PX4 are skipped. The action's
 script: `shellcheck action/run.sh`.
+
+[RELEASING.md](RELEASING.md) says how to add a PX4 release to the data and
+how to cut a release.
 
 ## License
 

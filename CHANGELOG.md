@@ -1,45 +1,58 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (not released yet)
 
-- Release data generator (`generator/generate.py`) and data for every final
-  PX4 release from v1.14.0 to v1.17.0, v1.18.0-rc1 and main at 95a0c23482:
-  Kconfig symbols (generated Zenoh catalog and board Kconfig included),
-  module commands, and parameters from param-lineage. JSON Schema in
-  `data/schema/`. `--check` regenerates the data byte for byte.
-- Scanner `fork-preflight` (Rust) with the `kconfig-undefined` check: board
-  file lines whose Kconfig symbol the target release does not define, limited
-  to what the fork added or changed since its base release (`--all-files`
-  for every board file). Text and JSON output; the release data is built in.
-- `param-removed`: script lines that name a parameter the target release does
-  not have, with param-lineage's removal kind and successors.
-- `command-removed`: script commands that the base release declares and the
-  target does not, with the declaring `CMakeLists.txt`.
-- The command data also holds the POSIX shell builtins that
-  `platforms/common/apps.cpp.in` registers (`sleep`, `list_tasks`,
+First release, planned together with data for PX4 v1.18.0. The data in the
+tree now ends at v1.18.0-rc1 and main at 95a0c23482.
+
+### Release data
+
+- Generator (`generator/generate.py`, Python 3.12, pinned packages with
+  hashes) and data for every final PX4 release from v1.14.0 to v1.17.0,
+  v1.18.0-rc1 and main at one pinned commit. JSON Schema in `data/schema/`.
+  `--check` regenerates the data byte for byte.
+- Kconfig symbols from kconfiglib on the release's own tree, with the
+  generated Zenoh catalog and board Kconfig files.
+- Module commands (`MAIN` of `px4_add_module`) and the POSIX shell builtins
+  that `platforms/common/apps.cpp.in` registers (`sleep`, `list_tasks`,
   `list_files`, `shutdown`), so a module command that becomes a builtin is
   not reported as removed.
-- Fork definitions in Kconfig, `CMakeLists.txt`, C/C++ and YAML module
-  configs count as defined. Rules without data are reported as skipped.
-- `--sarif` (SARIF 2.1.0) and a composite GitHub Action (`action.yml`).
-- `--fork-point REV` (Action input `fork-point`): the change set starts at the
-  merge-base of HEAD and REV. A fork of PX4's main branch, where no release
-  is an ancestor of HEAD, starts at the merge-base with the data's `main`
-  commit instead of stopping with an error. Reports name the fork point.
-- A fork point on `main` that the target does not contain stops with an
-  error instead of reporting every name `main` added after the target's
-  release branch was cut.
-- A finding whose name only upstream lines of a fork-modified file define
-  gets a hint naming that file (found on a fork that extends a module the
-  target release removes).
+- Parameters and their removals from param-lineage at a pinned commit (none
+  for main).
 - Data format 2: `kconfig.removed` records the Kconfig symbols each release
   removed, the PX4 commits that removed them and the successors that PX4's
   git history shows (renamed, set by in-tree boards instead, or selected).
-  `kconfig-undefined` findings for a symbol the base defined carry this as a
-  hint, following successors to the target. The generator needs a full PX4
-  clone and records the git version.
-- A fork of `main` (no release base) gets `defined_at_base` for
-  `kconfig-undefined` from the fork point's own Kconfig files, read with git:
-  "already undefined at the fork point" and "removed in between" (with the
-  removal hint) instead of unknown. Zenoh topic symbols that the fork point
-  generates at build time stay unknown.
+  The generator needs a full PX4 clone and records the git version.
+
+### Scanner
+
+- `fork-preflight` (Rust 1.94.0) with the release data built in. Text, JSON
+  and SARIF 2.1.0 output; exit status 0, 1 (findings) or 2 (error).
+- `kconfig-undefined`: board file lines whose Kconfig symbol the target
+  release does not define. Findings for a symbol the base defined carry the
+  removing commits and successors as a hint, followed to the target.
+- `param-removed`: script lines that name a parameter the target release
+  does not have, with param-lineage's removal kind and successors.
+- `command-removed`: script commands that the base release declares and the
+  target does not, with the declaring `CMakeLists.txt`.
+- Only lines the fork added or changed since its fork point are checked;
+  `--all-files` checks every board file and script.
+- The fork point is the base release, `--fork-point REV` (merge-base of HEAD
+  and REV), or for a fork of PX4's main branch the merge-base with the data's
+  `main` commit. Reports name it. A fork point on `main` that the target does
+  not contain stops with an error.
+- Fork definitions in Kconfig, `CMakeLists.txt`, C/C++ and YAML module
+  configs count as defined. A name that only upstream lines of a
+  fork-modified file define gets a hint naming that file.
+- Without a release base, `kconfig-undefined` reads the fork point's own
+  Kconfig files with git to say whether the symbol was already undefined
+  there or removed in between. Generated Zenoh topic symbols stay unknown.
+- Rules without data are reported as skipped.
+- `--version` and every report carry the notices of `DISCLAIMER.md`;
+  `--license` prints the license texts.
+
+### GitHub Action
+
+- Composite action (`action.yml`) that builds the scanner with the pinned
+  toolchain, writes the text report to the log and SARIF to a file. Run
+  locally in a `rust:1.94.0` linux/amd64 container, not yet on GitHub.
