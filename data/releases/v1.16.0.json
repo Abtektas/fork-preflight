@@ -902,24 +902,28 @@
    "previous": "v1.15.4",
    "symbols": {
     "BOARD_ROOTFSDIR": {
-     "evidence": null,
+     "evidence": "named",
      "removed_by": [
       {
        "commit": "0cb7b8b5255d2938aef1b46fb73acc3f83c7fc6e",
        "subject": "voxl2: Changed from old CONFIG_BOARD_ROOTFSDIR to new CONFIG_BOARD_ROOT_PATH in Posix builds (#24392"
       }
      ],
-     "successors": []
+     "successors": [
+      "BOARD_ROOT_PATH"
+     ]
     },
     "DRIVERS_MAGNETOMETER_LIS2MDL": {
-     "evidence": null,
+     "evidence": "named",
      "removed_by": [
       {
        "commit": "f0a852918bd46d28f70c9ffb75c62a1dc36e605c",
        "subject": "lis2mdl: remove driver from source. This part is functionaly equivalent to the iis2mdc"
       }
      ],
-     "successors": []
+     "successors": [
+      "DRIVERS_MAGNETOMETER_ST_IIS2MDC"
+     ]
     },
     "MODULES_DIFFERENTIAL_DRIVE": {
      "boards": {

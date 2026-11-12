@@ -176,8 +176,8 @@
      }
     },
     "evidence": {
-     "description": "Which rule found the successors: renamed (the removing commit adds it with a matching name, or a Zenoh msg file was renamed), boards (in-tree boards set it instead), selected (the symbol selected it), or null.",
-     "enum": ["renamed", "boards", "selected", null]
+     "description": "Which rule found the successors: renamed (the removing commit adds it with a matching name, or a Zenoh msg file was renamed; also a sibling rename's token change, or the commit that orphaned the Kconfig file), boards (in-tree boards set it instead), selected (the symbol selected it), named (the removing commit's message names it), or null.",
+     "enum": ["renamed", "boards", "selected", "named", null]
     },
     "successors": {
      "type": "array",

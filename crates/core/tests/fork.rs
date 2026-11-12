@@ -987,6 +987,10 @@ fn kconfig_hint_evidence_kinds() {
         hint(("GONE", Some("selected"), &["A"], &[]), &["KEEP", "A"]),
         format!("{by}; it selected A")
     );
+    assert_eq!(
+        hint(("GONE", Some("named"), &["A"], &[]), &["KEEP", "A"]),
+        format!("{by}; its commit message names A")
+    );
     assert_eq!(hint(("GONE", None, &[], &[]), &["KEEP"]), by);
 }
 

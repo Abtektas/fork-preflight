@@ -1189,14 +1189,16 @@
      ]
     },
     "ZENOH_PUBSUB_SENSOR_GPS": {
-     "evidence": null,
+     "evidence": "named",
      "removed_by": [
       {
        "commit": "e40501eba0f9d42be7da16d1a8b94aec2973621f",
        "subject": "refactor(msg): rename GPS to GNSS in messages, topics and sensor parameters (#24399)"
       }
      ],
-     "successors": []
+     "successors": [
+      "ZENOH_PUBSUB_SENSOR_GNSS"
+     ]
     },
     "ZENOH_PUBSUB_VEHICLE_ANGULAR_ACCELERATION_SETPOINT": {
      "evidence": null,

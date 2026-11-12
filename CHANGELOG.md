@@ -21,7 +21,8 @@ tree now ends at v1.18.0-rc1 and main at 95a0c23482.
   for main).
 - Data format 2: `kconfig.removed` records the Kconfig symbols each release
   removed, the PX4 commits that removed them and the successors that PX4's
-  git history shows (renamed, set by in-tree boards instead, or selected).
+  git history shows (renamed, set by in-tree boards instead, selected, or
+  named by the removing commit's message).
   The generator needs a full PX4 clone and records the git version.
 
 ### Scanner

@@ -61,7 +61,7 @@ pub struct KconfigRemoved {
 #[derive(Debug, Clone, Deserialize)]
 pub struct KconfigRemoval {
     pub removed_by: Vec<Commit>,
-    /// `renamed`, `boards` or `selected`; null when the history shows no successor.
+    /// `renamed`, `boards`, `selected` or `named`; null when the history shows no successor.
     pub evidence: Option<String>,
     pub successors: Vec<String>,
     #[serde(default)]

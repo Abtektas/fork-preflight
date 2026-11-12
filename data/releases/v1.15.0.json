@@ -862,24 +862,28 @@
      ]
     },
     "DRIVERS_BAROMETER_INVENSENSE_ICP10100": {
-     "evidence": null,
+     "evidence": "renamed",
      "removed_by": [
       {
        "commit": "461b146ba8bea4ec3da70d2eb85734272852f93c",
        "subject": "drivers: barometer: ms5837 fix compilation error"
       }
      ],
-     "successors": []
+     "successors": [
+      "DRIVERS_BAROMETER_INVENSENSE_ICP101XX"
+     ]
     },
     "DRIVERS_BAROMETER_INVENSENSE_ICP10111": {
-     "evidence": null,
+     "evidence": "renamed",
      "removed_by": [
       {
        "commit": "461b146ba8bea4ec3da70d2eb85734272852f93c",
        "subject": "drivers: barometer: ms5837 fix compilation error"
       }
      ],
-     "successors": []
+     "successors": [
+      "DRIVERS_BAROMETER_INVENSENSE_ICP101XX"
+     ]
     },
     "DRIVERS_IMU_ADIS16477": {
      "evidence": "renamed",

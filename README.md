@@ -92,7 +92,8 @@ for a symbol the base defined names the release and the PX4 commits that
 removed it, and what PX4's git history shows took its place: the name the
 same commit added (`renamed to ...`), the symbols in-tree boards set instead
 (`in-tree boards set ... (79/79) instead`, boards that changed over out of
-boards that set it), or the symbols it selected. A successor that a later
+boards that set it), the symbols it selected, or the name the removing
+commit's message gives (`its commit message names ...`). A successor that a later
 release removed again is followed to the target ("then in main ..."), and
 the hint says when the target defines none of them. These are records of
 what upstream did, not advice; read the named commits before changing a
@@ -215,7 +216,11 @@ searches:
   name or a batch prefix rename; a Zenoh msg file renamed by git), `boards`
   (in-tree board files that set it set the successor instead, in the same
   commits or between the two releases) or `selected` (it selected the
-  successor). The rules are in `generator/kconfig_removed.py`. They read only
+  successor). For a symbol these leave without a successor: `renamed` also
+  when a sibling renamed in the same commit gives the name by the same token
+  change, or when the commit that orphaned its Kconfig file added a matching
+  name; `named` when the commit message says "rename A to B", "from A to B"
+  or "equivalent to B". The rules are in `generator/kconfig_removed.py`. They read only
   git objects of the pinned commits, so the PX4 clone must have the full
   history (a shallow clone stops the generator), and the git version is
   recorded in `tools` because rename detection is git's. `--check` notes a

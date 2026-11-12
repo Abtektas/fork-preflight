@@ -19,6 +19,18 @@ at R gets:
                  P -> R, >= 80% of boards that set X set Y, >= 80% of boards gaining
                  Y had X, and Y's `config` came from a commit touching X's directory
     selected  K3 X selected Y at P and R defines Y
+  and, only for a symbol none of these gives a successor:
+    renamed   K5 the commit that drops X renames siblings (a git msg rename, or a batch
+                 prefix rename) with the token change A -> B, and adds X with A -> B
+              K7 X's Kconfig file was orphaned before P (no other file left in its
+                 directory): a unique name match among the `config` lines added by
+                 the commit that deleted the directory's other files
+  K1 and K7 take, when difflib cannot decide, the one candidate that inserts tokens, lengthens
+  the last token or names X's part family (ICP10100 -> ICP101XX).
+    named     K6 the message of the commit that drops X says "rename A to B" or
+                 "from A to B" (X with A -> B, or B itself, defined at R), or "equivalent
+                 to", "replaced by/with", "in favour of", "superseded by" B, where B is
+                 the end of exactly one symbol at R that shares X's first two tokens
 
 The rules and thresholds were measured on the data releases and on v1.13.3 -> v1.14.0
 (contrib notes); they read only git objects of the pinned commits, so the output is
@@ -44,6 +56,11 @@ ZENOH = "ZENOH_PUBSUB_"
 SUBJECT_LENGTH = 100
 MAX_COMMITS = 3
 MAX_HOPS = 3
+WORD = r"([A-Za-z0-9_]+)"
+RENAME_RES = (re.compile(rf"\brenam(?:e|es|ed|ing)\s+{WORD}\s+to\s+{WORD}", re.I),
+              re.compile(rf"\bfrom\s+(?:old\s+)?{WORD}\s+to\s+(?:new\s+)?{WORD}", re.I))
+REPLACED_RE = re.compile(rf"\b(?:equivalent\s+to|replaced\s+(?:by|with)|in\s+favou?r\s+of|superseded\s+by)"
+                         rf"\s+(?:the\s+)?{WORD}", re.I)
 
 
 GIT_OPTIONS = ("-c", "color.ui=never", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
@@ -71,6 +88,52 @@ class History:
     def check_full(self) -> None:
         if self.git("rev-parse", "--is-shallow-repository").strip() != "false":
             raise HistoryError("the PX4 clone is shallow; the removal history needs the full history")
+
+    def message(self, commit: str) -> str:
+        return self.git("log", "-1", "--format=%B", commit)
+
+    def commit_renames(self, commit: str) -> tuple[list[tuple[str, str]], set[str]]:
+        """Renames one commit makes: git msg renames (-M50%) and batch prefix `config` renames,
+        as (old, new) symbol names; and the Zenoh topics of the msg files it adds."""
+        pairs, added = [], set()
+        for line in self.git("show", "-M50%", "--format=", "--name-status", commit, "--", "msg").splitlines():
+            parts = line.split("\t")
+            if parts[0].startswith("R") and parts[1].endswith(".msg") and parts[2].endswith(".msg"):
+                pairs.append((topic_of(parts[1]), topic_of(parts[2])))
+            elif parts[0] == "A" and parts[1].endswith(".msg"):
+                added.add(topic_of(parts[1]))
+        rem, add = self.commit_configs(commit)
+        pairs += sorted(prefix_groups(rem - add, add - rem).items())
+        return pairs, added | (add - rem)
+
+    def commit_configs(self, commit: str) -> tuple[set[str], set[str]]:
+        """`config` names one commit drops and adds in non-generated Kconfig files."""
+        text = self.git("show", "--format=", "-U0", "--no-renames", commit, "--", "*Kconfig*")
+        cur, rem, add = None, set(), set()
+        for line in text.splitlines():
+            if line.startswith("diff --git"):
+                cur = line.split(" b/", 1)[1]
+            elif line.startswith(("---", "+++")) or cur in GENERATED:
+                continue
+            elif line[:1] in "+-":
+                m = CONFIG_RE.match(line[1:])
+                if m:
+                    (rem if line[0] == "-" else add).add(m.group(1))
+        return rem, add
+
+    def orphan_origin(self, p: str, x: str) -> str | None:
+        """When the directory of x's Kconfig file holds nothing else at p, the commit before p
+        that deleted the directory's other files."""
+        for f in self.definition_files(p, x):
+            d = os.path.dirname(f)
+            if d.count("/") < 2:
+                continue
+            left = self.git("ls-tree", "-r", "--name-only", p, "--", d + "/").split()
+            if left and all(os.path.basename(t).startswith("Kconfig") for t in left):
+                c = self.git("log", "-1", "--format=%H", "--diff-filter=D", p, "--", d + "/").strip()
+                if c:
+                    return c
+        return None
 
     def subject(self, commit: str) -> str:
         return self.git("log", "-1", "--format=%s", commit).strip()[:SUBJECT_LENGTH]
@@ -107,17 +170,7 @@ class History:
         file, with the `config` names each adds and X's batch-rename partner."""
         found: dict[str, list[tuple[str, set[str], str | None]]] = {}
         for c in self.git("rev-list", "--no-merges", f"{p}..{r}", "--", "*Kconfig*").split():
-            text = self.git("show", "--format=", "-U0", "--no-renames", c, "--", "*Kconfig*")
-            cur, rem, add = None, set(), set()
-            for line in text.splitlines():
-                if line.startswith("diff --git"):
-                    cur = line.split(" b/", 1)[1]
-                elif line.startswith(("---", "+++")) or cur in GENERATED:
-                    continue
-                elif line[:1] in "+-":
-                    m = CONFIG_RE.match(line[1:])
-                    if m:
-                        (rem if line[0] == "-" else add).add(m.group(1))
+            rem, add = self.commit_configs(c)
             batch = prefix_groups(rem - add, add - rem)
             for x in rem - add:
                 found.setdefault(x, []).append((c, add, batch.get(x)))
@@ -125,8 +178,11 @@ class History:
 
     def board_cochange(self, p: str, r: str) -> tuple[Counter, dict[str, Counter], Counter]:
         """Per (commit, board file) in p..r: symbols dropped, and those added in the same change."""
+        return self.board_changes(self.git("rev-list", "--no-merges", f"{p}..{r}", "--", "*.px4board").split())
+
+    def board_changes(self, commits: list[str]) -> tuple[Counter, dict[str, Counter], Counter]:
         dropped, together, adds = Counter(), {}, Counter()
-        for c in self.git("rev-list", "--no-merges", f"{p}..{r}", "--", "*.px4board").split():
+        for c in commits:
             text = self.git("show", "--format=", "-U0", "--no-renames", c, "--", "*.px4board")
             files: dict[str, tuple[set[str], set[str]]] = {}
             cur = None
@@ -195,6 +251,48 @@ def insert_rename(x: str, y: str) -> bool:
     return i == len(a)
 
 
+def extends_last(x: str, y: str) -> bool:
+    """Y is X with letters appended to its last token (..._MS4525 -> ..._MS4525DO)."""
+    a, b = x.split("_"), y.split("_")
+    return len(a) == len(b) and a[:-1] == b[:-1] and b[-1].startswith(a[-1]) and b[-1] != a[-1]
+
+
+def family_match(x: str, y: str) -> bool:
+    """Y names a part family that covers X: same tokens, last token of equal length where Y has
+    X in some places (..._ICP10100 -> ..._ICP101XX)."""
+    a, b = x.split("_"), y.split("_")
+    return (len(a) == len(b) and a[:-1] == b[:-1] and len(a[-1]) == len(b[-1]) and "X" in b[-1]
+            and a[-1] != b[-1] and all(i == j or j == "X" for i, j in zip(a[-1], b[-1])))
+
+
+def substitute(x: str, old: str, new: str) -> str | None:
+    """X with the token run `old` replaced by `new` (whole tokens, first occurrence)."""
+    xt, ot = x.split("_"), old.split("_")
+    for i in range(len(xt) - len(ot) + 1):
+        if xt[i:i + len(ot)] == ot:
+            return "_".join(xt[:i] + new.split("_") + xt[i + len(ot):])
+    return None
+
+
+def token_change(old: str, new: str) -> tuple[str, str] | None:
+    """The token run that differs between two names, after their common prefix and suffix."""
+    a, b = old.split("_"), new.split("_")
+    i = 0
+    while i < min(len(a), len(b)) and a[i] == b[i]:
+        i += 1
+    j = 0
+    while j < min(len(a), len(b)) - i and a[-1 - j] == b[-1 - j]:
+        j += 1
+    if i + j >= len(a) or i + j >= len(b):
+        return None
+    return "_".join(a[i:len(a) - j]), "_".join(b[i:len(b) - j])
+
+
+def norm(word: str) -> str:
+    word = word.upper().strip("_")
+    return word[len("CONFIG_"):] if word.startswith("CONFIG_") else word
+
+
 def name_match(x: str, y: str) -> bool:
     return insert_rename(x, y) or difflib.SequenceMatcher(None, x, y).ratio() >= 0.8
 
@@ -230,7 +328,8 @@ def k1_step(x: str, removals: dict, pool: set[str]) -> str | None:
     cands = sorted(((difflib.SequenceMatcher(None, x, y).ratio(), y) for y in added), reverse=True)
     if cands and (len(cands) == 1 or cands[0][0] - cands[1][0] >= 0.03):
         return cands[0][1]
-    return None
+    structural = [y for _, y in cands if insert_rename(x, y) or extends_last(x, y) or family_match(x, y)]
+    return structural[0] if len(structural) == 1 else None
 
 
 def board_step(x: str, dropped: Counter, together: dict, adds: Counter, pool: set[str]) -> str | None:
@@ -262,6 +361,71 @@ def k1_chain(x: str, removals: dict, new: set[str], at_r: set[str], boards: tupl
     return None
 
 
+def own_boards_agree(history: History, x: str, chain: list[str], removals: dict) -> bool:
+    """For a one-hop rename that only lengthens the last token (..._MS4525 -> ..._MS4525DO), the
+    board veto counts only the board edits of the commit that renames it: other commits may drop
+    x for an unrelated reason (a common menu instead of single drivers). Not for token inserts:
+    DRIVERS_OSD -> DRIVERS_OSD_MSP_OSD is a new driver, not a rename."""
+    if len(chain) != 1 or not extends_last(x, chain[0]):
+        return False
+    commits = [c for c, add, _ in removals.get(x, []) if chain[0] in add]
+    if not commits:
+        return False
+    dropped, together, _ = history.board_changes(commits)
+    return dropped[x] == 0 or together.get(x, Counter())[chain[0]] / dropped[x] >= 0.5
+
+
+def late_successor(history: History, p: str, x: str, commits: list[str],
+                   r_symbols: set[str]) -> tuple[str, list[str]] | None:
+    """K5, K6, K7 for a symbol the main rules left without a successor."""
+    zenoh = x.startswith(ZENOH)
+    # K5: a sibling rename's token change, applied to x, gives a name the same commit adds.
+    for c in commits[:MAX_COMMITS]:
+        pairs, added = history.commit_renames(c)
+        ys = set()
+        for old, new in pairs:
+            change = token_change(old, new)
+            y = change and substitute(x, *change)
+            if y and y != x and y in added and y in r_symbols:
+                ys.add(y)
+        if len(ys) == 1:
+            return "renamed", sorted(ys)
+    # K6: the commit message names the successor.
+    for c in commits[:MAX_COMMITS]:
+        text = history.message(c)
+        ys = set()
+        for rx in RENAME_RES:
+            for m in rx.finditer(text):
+                old, new = norm(m.group(1)), norm(m.group(2))
+                if old == x:
+                    ys.add(new)
+                elif zenoh:
+                    t = substitute(x[len(ZENOH):], old, new)
+                    ys.add(ZENOH + t if t else "")
+                else:
+                    ys.add(substitute(x, old, new) or "")
+        ys = {y for y in ys if y and y != x and y in r_symbols}
+        if not ys:
+            head = x.split("_")[:2]
+            for m in REPLACED_RE.finditer(text):
+                end = norm(m.group(1)).split("_")
+                ys |= {y for y in r_symbols if y != x and y.split("_")[:2] == head and len(y.split("_")) > len(end) + 1
+                       and y.split("_")[-len(end):] == end}
+        if len(ys) == 1:
+            return "named", sorted(ys)
+    # K7: x's Kconfig was orphaned; the commit that emptied its directory added the successor.
+    if not zenoh:
+        c = history.orphan_origin(p, x)
+        if c:
+            _, add = history.commit_configs(c)
+            cands = {y for y in add if y in r_symbols and y != x and name_match(x, y)}
+            if cands:
+                y = k1_step(x, {x: [(c, cands, None)]}, cands)
+                if y:
+                    return "renamed", [y]
+    return None
+
+
 def derive(history: History, p_symbols: set[str], p: str, r_symbols: set[str], r: str) -> dict[str, dict]:
     """Every symbol defined at commit p and not at commit r, with its removal evidence."""
     removed, new = p_symbols - r_symbols, r_symbols - p_symbols
@@ -286,7 +450,10 @@ def derive(history: History, p_symbols: set[str], p: str, r_symbols: set[str], r
                     renamed_to = [topic_of(dest)]
         else:
             chain = k1_chain(x, removals, new, r_symbols, (dropped, together, adds))
-            if chain and (dropped[x] == 0 or max(together.get(x, Counter())[h] for h in chain) / dropped[x] >= 0.5):
+            if chain and not (dropped[x] == 0 or max(together.get(x, Counter())[h] for h in chain) / dropped[x] >= 0.5) \
+                    and not own_boards_agree(history, x, chain, removals):
+                chain = None
+            if chain:
                 renamed_to = [chain[-1]]
                 if len(chain) > 1:
                     entry["via"] = chain[:-1]
@@ -317,6 +484,10 @@ def derive(history: History, p_symbols: set[str], p: str, r_symbols: set[str], r
                 selected = sorted({y for y in history.selects(p, x) if y in r_symbols})
                 if selected:
                     entry["evidence"], entry["successors"] = "selected", selected
+        if not entry["successors"]:
+            late = late_successor(history, p, x, commits, r_symbols)
+            if late:
+                entry["evidence"], entry["successors"] = late
         out[x] = entry
     # K4: USER_<S> follows the successor of MODULES_<S>.
     for x, entry in out.items():

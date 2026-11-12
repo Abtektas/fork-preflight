@@ -247,6 +247,30 @@ class ReleaseData(unittest.TestCase):
         e = self.removal("v1.18.0-rc1", "ZENOH_PUBSUB_ROVER_VELOCITY_STATUS")
         self.assertEqual(e["successors"], ["ZENOH_PUBSUB_ROVER_SPEED_STATUS"])
 
+    def test_kconfig_late_rules(self):
+        # K5: sibling RoverVelocityStatus -> RoverSpeedStatus, same commit adds RoverSpeedSetpoint.
+        e = self.removal("v1.18.0-rc1", "ZENOH_PUBSUB_ROVER_VELOCITY_SETPOINT")
+        self.assertEqual((e["evidence"], e["successors"]), ("renamed", ["ZENOH_PUBSUB_ROVER_SPEED_SETPOINT"]))
+        # K7: Kconfig orphaned by 21daa0f398, which added the ICP101XX family driver.
+        for symbol in ("DRIVERS_BAROMETER_INVENSENSE_ICP10100", "DRIVERS_BAROMETER_INVENSENSE_ICP10111"):
+            e = self.removal("v1.15.0", symbol)
+            self.assertEqual((e["evidence"], e["successors"]), ("renamed", ["DRIVERS_BAROMETER_INVENSENSE_ICP101XX"]))
+        # K6: the commit message names the successor.
+        for release, symbol, successor in (("main", "ZENOH_PUBSUB_SENSOR_GPS", "ZENOH_PUBSUB_SENSOR_GNSS"),
+                                           ("v1.16.0", "BOARD_ROOTFSDIR", "BOARD_ROOT_PATH"),
+                                           ("v1.16.0", "DRIVERS_MAGNETOMETER_LIS2MDL", "DRIVERS_MAGNETOMETER_ST_IIS2MDC")):
+            e = self.removal(release, symbol)
+            self.assertEqual((e["evidence"], e["successors"]), ("named", [successor]))
+
+    def test_name_rules(self):
+        self.assertTrue(kconfig_removed.extends_last("D_P_MS4525", "D_P_MS4525DO"))
+        self.assertFalse(kconfig_removed.extends_last("D_OSD", "D_OSD_MSP_OSD"))
+        self.assertTrue(kconfig_removed.family_match("B_ICP10100", "B_ICP101XX"))
+        self.assertFalse(kconfig_removed.family_match("B_ICP10100", "B_ICP201XX"))
+        self.assertEqual(kconfig_removed.token_change("ROVER_VELOCITY_STATUS", "ROVER_SPEED_STATUS"), ("VELOCITY", "SPEED"))
+        self.assertEqual(kconfig_removed.substitute("DRIVERS_UAVCAN_V1", "UAVCAN_V1", "CYPHAL"), "DRIVERS_CYPHAL")
+        self.assertIsNone(kconfig_removed.substitute("DRIVERS_UAVCAN_V10", "UAVCAN_V1", "CYPHAL"))
+
     def test_kconfig_boards(self):
         e = self.removal("v1.17.0", "MODULES_FW_POS_CONTROL")
         self.assertEqual(e["evidence"], "boards")

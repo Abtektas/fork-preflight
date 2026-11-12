@@ -1037,14 +1037,16 @@
      "successors": []
     },
     "ZENOH_PUBSUB_ROVER_VELOCITY_SETPOINT": {
-     "evidence": null,
+     "evidence": "renamed",
      "removed_by": [
       {
        "commit": "a1bc09a6ad960215b300b4f5532067055b591657",
        "subject": "rover: seperate speed control"
       }
      ],
-     "successors": []
+     "successors": [
+      "ZENOH_PUBSUB_ROVER_SPEED_SETPOINT"
+     ]
     },
     "ZENOH_PUBSUB_ROVER_VELOCITY_STATUS": {
      "evidence": "renamed",

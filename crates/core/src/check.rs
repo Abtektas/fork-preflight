@@ -819,6 +819,7 @@ fn successor_words(removal: &KconfigRemoval) -> Option<String> {
             format!("in-tree boards set {} instead", counted.join(" and "))
         }
         Some("selected") => format!("it selected {names}"),
+        Some("named") => format!("its commit message names {names}"),
         _ => format!("successors: {names}"),
     })
 }
