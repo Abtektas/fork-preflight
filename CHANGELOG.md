@@ -18,7 +18,9 @@ at 95a0c23482.
   `list_files`, `shutdown`), so a module command that becomes a builtin is
   not reported as removed.
 - Parameters and their removals from param-lineage 0.1.0 (be8fd9cc8e). It
-  keeps only final releases, so v1.18.0-rc1 and main have none.
+  keeps only final releases, so v1.18.0-rc1 and main have none; for a fork
+  based on one of them, `param-removed` says that the base has no parameter
+  data.
 - Data format 2: `kconfig.removed` records the Kconfig symbols each release
   removed, the PX4 commits that removed them and the successors that PX4's
   git history shows (renamed, set by in-tree boards instead, selected, or

@@ -194,7 +194,8 @@ releases and their pinned commits are in `generator/releases.json`: every
 final release from v1.14.0 to v1.18.0, v1.18.0-rc1, and `main` at one pinned
 commit. v1.18.0-rc1 and `main` have no parameter data: param-lineage keeps a
 snapshot of final releases only, so `param-removed` is skipped when one of
-them is the target. The layout is `data/schema/release.schema.json`.
+them is the target, and for a fork based on one of them the message says that
+the base has no parameter data (the parameter may already be missing there). The layout is `data/schema/release.schema.json`.
 
 The facts come from the release's own source tree and tools, not from text
 searches:

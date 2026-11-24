@@ -219,6 +219,40 @@ fn px4_v1_17_to_v1_18() {
 }
 
 #[test]
+fn px4_v1_18_rc1_base_has_no_parameter_data() {
+    // param-lineage keeps final releases only, so a fork of v1.18.0-rc1 has no base parameters:
+    // the findings stay, and the message says that the base is not known.
+    let Some(dir) = px4_clone_at("v1.18.0-rc1") else {
+        eprintln!("skipped: FORK_PREFLIGHT_PX4 not set");
+        return;
+    };
+    let out = run(&[
+        "--target",
+        "v1.18.0",
+        "--all-files",
+        "--json",
+        dir.path().to_str().unwrap(),
+    ]);
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["base"], "v1.18.0-rc1");
+    let findings = report["findings"].as_array().unwrap();
+    let params: Vec<&serde_json::Value> = findings
+        .iter()
+        .filter(|f| f["rule"] == "param-removed")
+        .collect();
+    assert_eq!(params.len(), 52);
+    assert!(params.iter().all(|f| f["defined_at_base"].is_null()));
+    let f = params
+        .iter()
+        .find(|f| f["symbol"] == "FD_ACT_MOT_TOUT")
+        .unwrap();
+    assert_eq!(
+        f["message"],
+        "FD_ACT_MOT_TOUT is not a parameter in v1.18.0; the data has no parameters for v1.18.0-rc1, so it may already be missing there"
+    );
+}
+
+#[test]
 fn px4_v1_16_2_to_main_kconfig_hints() {
     let Some(dir) = px4_clone_at("v1.16.2") else {
         eprintln!("skipped: FORK_PREFLIGHT_PX4 not set");

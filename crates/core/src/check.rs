@@ -625,6 +625,10 @@ impl Context<'_> {
                 "{name} is not in the parameter data of {target} nor of {}",
                 base.release
             ),
+            (Some(base), None) => format!(
+                "{name} is not a parameter in {target}; the data has no parameters for {}, so it may already be missing there",
+                base.release
+            ),
             _ => format!("{name} is not a parameter in {target}"),
         };
         if used.silent {
