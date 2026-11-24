@@ -196,6 +196,11 @@ mod tests {
         assert!(releases.contains_key("v1.17.0") && releases.contains_key("main"));
         let rc1 = &releases["v1.18.0-rc1"];
         assert!(rc1.defines_symbol("BOARD_UAVCAN_TIMER_OVERRIDE", None));
+        // param-lineage keeps only final releases: v1.18.0 has parameters, its candidate none
+        assert!(rc1.parameters.is_none());
+        let v1_18 = &releases["v1.18.0"];
+        assert!(v1_18.defines_symbol("BOARD_UAVCAN_TIMER_OVERRIDE", None));
+        assert!(v1_18.parameters.is_some());
         let main = &releases["main"];
         assert!(!main.defines_symbol("BOARD_NAVQ95_IO23_PWM", None));
         assert!(main.defines_symbol("BOARD_NAVQ95_IO23_PWM", Some("nxp/mr-navq95")));

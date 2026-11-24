@@ -2,13 +2,13 @@
 
 ## 0.1.0 (not released yet)
 
-First release, planned together with data for PX4 v1.18.0. The data in the
-tree now ends at v1.18.0-rc1 and main at 95a0c23482.
+First release, with data for PX4 v1.18.0. The data ends at v1.18.0 and main
+at 95a0c23482.
 
 ### Release data
 
 - Generator (`generator/generate.py`, Python 3.12, pinned packages with
-  hashes) and data for every final PX4 release from v1.14.0 to v1.17.0,
+  hashes) and data for every final PX4 release from v1.14.0 to v1.18.0,
   v1.18.0-rc1 and main at one pinned commit. JSON Schema in `data/schema/`.
   `--check` regenerates the data byte for byte.
 - Kconfig symbols from kconfiglib on the release's own tree, with the
@@ -17,8 +17,8 @@ tree now ends at v1.18.0-rc1 and main at 95a0c23482.
   that `platforms/common/apps.cpp.in` registers (`sleep`, `list_tasks`,
   `list_files`, `shutdown`), so a module command that becomes a builtin is
   not reported as removed.
-- Parameters and their removals from param-lineage at a pinned commit (none
-  for main).
+- Parameters and their removals from param-lineage 0.1.0 (be8fd9cc8e). It
+  keeps only final releases, so v1.18.0-rc1 and main have none.
 - Data format 2: `kconfig.removed` records the Kconfig symbols each release
   removed, the PX4 commits that removed them and the successors that PX4's
   git history shows (renamed, set by in-tree boards instead, selected, or

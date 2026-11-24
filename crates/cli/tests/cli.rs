@@ -143,14 +143,14 @@ fn px4_main_after_the_cleanup_has_none() {
 }
 
 #[test]
-fn px4_v1_17_to_v1_18_rc1() {
+fn px4_v1_17_to_v1_18() {
     let Some(dir) = px4_clone_at("v1.17.0") else {
         eprintln!("skipped: FORK_PREFLIGHT_PX4 not set");
         return;
     };
     let out = run(&[
         "--target",
-        "v1.18.0-rc1",
+        "v1.18.0",
         "--all-files",
         "--json",
         dir.path().to_str().unwrap(),
@@ -200,7 +200,7 @@ fn px4_v1_17_to_v1_18_rc1() {
     };
     assert_eq!(
         finding("SENS_TEMP_ID")["hint"],
-        "param-lineage: removed in v1.18.0-rc1 (renamed, PX4 does not convert a stored value); successors: HEATER1_SENS_ID"
+        "param-lineage: removed in v1.18.0 (migrated, PX4 converts a stored value); successors: HEATER1_SENS_ID"
     );
     assert_eq!(
         finding("core_heater")["hint"],
@@ -289,11 +289,11 @@ fn removed_at(
 }
 
 #[test]
-fn px4_rc1_and_main_still_set_parameters_rc1_removed() {
-    // Lines in PX4's own scripts at v1.18.0-rc1 and main (95a0c23482) that set parameters
-    // v1.18.0-rc1 removed. No script there runs a command that v1.17.0 has and they lack.
+fn px4_v1_18_and_main_still_set_parameters_v1_18_removed() {
+    // Lines in PX4's own scripts at v1.18.0 and main (95a0c23482) that set parameters
+    // v1.18.0 removed. No script there runs a command that v1.17.0 has and they lack.
     for (rev, target) in [
-        ("v1.18.0-rc1", "v1.18.0-rc1"),
+        ("v1.18.0", "v1.18.0"),
         ("95a0c23482329183d932ac99da00faa7e8d63143", "main"),
     ] {
         let Some(dir) = px4_clone_at(rev) else {

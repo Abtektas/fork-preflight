@@ -13,15 +13,15 @@ something the new release no longer defines:
 **Status: not released yet.** The release data, the three checks,
 text/JSON/SARIF output and a GitHub Action exist. They have been run on
 PX4's own tree and, locally, on six public forks, whose findings were
-reviewed for false positives. The first release, 0.1.0, is planned together
-with data for PX4 v1.18.0; until then the newest release in the data is
-v1.18.0-rc1. [CHANGELOG.md](CHANGELOG.md) lists what it will contain.
+reviewed for false positives. The data now includes PX4 v1.18.0, and the
+first release, 0.1.0, comes with it. [CHANGELOG.md](CHANGELOG.md) lists what
+it will contain.
 
 ## Scanner
 
 ```sh
 cargo build --release --locked
-target/release/fork-preflight --target v1.18.0-rc1 path/to/fork
+target/release/fork-preflight --target v1.18.0 path/to/fork
 ```
 
 `cargo install --locked --path crates/cli` puts the same binary in
@@ -110,13 +110,14 @@ keeps the definition.
 
 What the data does not cover:
 
-- **Parameters of `main`.** param-lineage has no snapshot of `main`, so
-  `param-removed` is skipped for `--target main`.
+- **Parameters of `main` and release candidates.** param-lineage has no
+  snapshot of `main` and keeps only final releases, so `param-removed` is
+  skipped for `--target main` and `--target v1.18.0-rc1`.
 - **Board-dependent parameters.** The parameter data is PX4's own parameter
   metadata. It has one count of output channels (`PWM_MAIN_FUNC1` to `8`),
   so a numbered parameter above the count (`PWM_MAIN_FUNC9`) is not reported
   unless the base had it. Parameters that only a board directory defines
-  (v1.18.0-rc1: `PWM_VOLT_SEL`, `PWM_LEVEL_CONT`, `SLNK_RADIO_*`) are not in
+  (v1.18.0: `PWM_VOLT_SEL`, `PWM_LEVEL_CONT`, `SLNK_RADIO_*`) are not in
   it; a script that sets one is reported as "not in the parameter data".
 - **Kconfig successors the rules miss.** The successors come from fixed
   rules over the git history between two data releases (measured on all 53
@@ -141,8 +142,8 @@ What the data does not cover:
 |---|---|---|
 | main 95a0c23482 | `--target main --all-files` | 19 lines in 11 board files assign 8 undefined Kconfig symbols (what PX4 pull request 29670 removes); parameters and commands skipped |
 | PX4 pull request 29670, 3e0e89e484 | `--target main --all-files` | no findings |
-| v1.17.0 | `--target v1.18.0-rc1 --all-files` | 9 boards assign `DRIVERS_POWER_MONITOR_PM_SELECTOR_AUTERION`; 42 script lines set 11 parameters that v1.18.0-rc1 removed (`SENS_TEMP_ID` 11, `EKF2_GPS_DELAY` 7, ...); 3 lines start `core_heater` or `pm_selector_auterion` |
-| v1.18.0-rc1, and main | `--base v1.17.0 --all-files` | 6 lines of PX4's own scripts still set parameters that v1.18.0-rc1 removed (`FD_ACT_MOT_TOUT` 3, `MPC_LAND_RC_HELP` 2, `COM_ARM_SDCARD` 1); no removed command |
+| v1.17.0 | `--target v1.18.0 --all-files` | 9 boards assign `DRIVERS_POWER_MONITOR_PM_SELECTOR_AUTERION`; 42 script lines set 11 parameters that v1.18.0 removed (`SENS_TEMP_ID` 11, `EKF2_GPS_DELAY` 7, ...); 3 lines start `core_heater` or `pm_selector_auterion` |
+| v1.18.0 | `--base v1.17.0 --target v1.18.0 --all-files` | 6 lines of PX4's own scripts still set parameters that v1.18.0 removed (`FD_ACT_MOT_TOUT` 3, `MPC_LAND_RC_HELP` 2, `COM_ARM_SDCARD` 1); no removed command |
 
 The parameter lines were checked against a plain text search of the same
 trees: the same lines, apart from documentation pages and commented lines.
@@ -169,7 +170,7 @@ jobs:
           fetch-depth: 0
       - uses: Abtektas/fork-preflight@<commit>
         with:
-          target: v1.18.0-rc1
+          target: v1.18.0
       - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         if: always()
         with:
@@ -190,8 +191,10 @@ the Dronecode Foundation. PX4 is a trademark of Dronecode Project, Inc.
 
 `data/releases/<release>.json` says what one PX4 release defines. The
 releases and their pinned commits are in `generator/releases.json`: every
-final release from v1.14.0 to v1.17.0, v1.18.0-rc1, and `main` at one pinned
-commit. The layout is `data/schema/release.schema.json`.
+final release from v1.14.0 to v1.18.0, v1.18.0-rc1, and `main` at one pinned
+commit. v1.18.0-rc1 and `main` have no parameter data: param-lineage keeps a
+snapshot of final releases only, so `param-removed` is skipped when one of
+them is the target. The layout is `data/schema/release.schema.json`.
 
 The facts come from the release's own source tree and tools, not from text
 searches:

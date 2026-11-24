@@ -2,7 +2,7 @@
  "format": 1,
  "parameter_data": {
   "repository": "https://github.com/Abtektas/param-lineage",
-  "commit": "9801d3f8540771f984cad94f7fdfe8c40561e21f"
+  "commit": "be8fd9cc8ef7b59110b12f905b4ce8da0d829fb4"
  },
  "releases": [
   {"release": "v1.14.0", "commit": "b8c541dd7277ed735139d7d1bfb829d61fbe29fb"},
@@ -20,6 +20,7 @@
   {"release": "v1.16.2", "commit": "54f0455ffcd755534539a7cf33a09a20bf71d29d"},
   {"release": "v1.17.0", "commit": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4"},
   {"release": "v1.18.0-rc1", "commit": "fca3df865af36124a28c9d607e850f111dbaaea9"},
+  {"release": "v1.18.0", "commit": "935addf1d6bec6e955b155494a52e7eb4b750eb3"},
   {"release": "main", "commit": "95a0c23482329183d932ac99da00faa7e8d63143"}
  ]
 }

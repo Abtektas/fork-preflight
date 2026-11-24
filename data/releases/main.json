@@ -1038,7 +1038,7 @@
    "src/modules/zenoh/Kconfig.topics"
   ],
   "removed": {
-   "previous": "v1.18.0-rc1",
+   "previous": "v1.18.0",
    "symbols": {
     "BOARD_UAVCAN_PERIPHERALS": {
      "evidence": null,
@@ -2164,7 +2164,7 @@
   "text": "LICENSE-THIRD-PARTY"
  },
  "notes": [
-  "Parameters: param-lineage at 9801d3f854 has no snapshot of main."
+  "Parameters: param-lineage at be8fd9cc8e has no snapshot of main."
  ],
  "parameters": null,
  "release": "main",
@@ -2174,7 +2174,7 @@
  },
  "tools": {
   "empy": "3.3.4",
-  "git": "2.56.0",
+  "git": "2.56.1",
   "kconfiglib": "14.1.0",
   "pyros-genmsg": "0.5.8"
  }

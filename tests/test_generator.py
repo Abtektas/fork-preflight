@@ -216,12 +216,14 @@ class ReleaseData(unittest.TestCase):
                 self.assertIn("platforms/common/apps.cpp.in", d["commands"].get(name, []), (release, name))
 
     def test_parameters(self):
-        rc1 = self.data["v1.18.0-rc1"]["parameters"]
-        self.assertEqual(len(rc1["removed"]), 60)
-        self.assertEqual(rc1["removed"]["SENS_TEMP_ID"], {"kind": "renamed", "successors": ["HEATER1_SENS_ID"]})
-        self.assertEqual(set(self.data["v1.17.0"]["parameters"]["names"]) - set(rc1["names"]), set(rc1["removed"]))
-        self.assertIsNone(self.data["main"]["parameters"])
-        self.assertTrue(any("no snapshot of main" in n for n in self.data["main"]["notes"]))
+        final = self.data["v1.18.0"]["parameters"]
+        self.assertEqual(len(final["removed"]), 61)
+        self.assertEqual(final["removed"]["SENS_TEMP_ID"], {"kind": "migrated", "successors": ["HEATER1_SENS_ID"]})
+        self.assertEqual(set(self.data["v1.17.0"]["parameters"]["names"]) - set(final["names"]), set(final["removed"]))
+        # param-lineage replaces a release candidate's snapshot with the final release's
+        for release in ["v1.18.0-rc1", "main"]:
+            self.assertIsNone(self.data[release]["parameters"])
+            self.assertTrue(any(f"no snapshot of {release}" in n for n in self.data[release]["notes"]))
 
     def removal(self, release, symbol):
         return self.data[release]["kconfig"]["removed"]["symbols"][symbol]
