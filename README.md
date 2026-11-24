@@ -10,12 +10,11 @@ something the new release no longer defines:
   unknown name prints an error at boot and the script goes on),
 - module commands in startup scripts whose module was removed.
 
-**Status: not released yet.** The release data, the three checks,
-text/JSON/SARIF output and a GitHub Action exist. They have been run on
-PX4's own tree and, locally, on six public forks, whose findings were
-reviewed for false positives. The data now includes PX4 v1.18.0, and the
-first release, 0.1.0, comes with it. [CHANGELOG.md](CHANGELOG.md) lists what
-it will contain.
+**Status: 0.1.0, the first release, with data up to PX4 v1.18.0.** The
+release data, the three checks, text/JSON/SARIF output and a GitHub Action
+have been run on PX4's own tree and, locally, on six public forks, whose
+findings were reviewed for false positives. [CHANGELOG.md](CHANGELOG.md)
+lists what it contains.
 
 ## Scanner
 

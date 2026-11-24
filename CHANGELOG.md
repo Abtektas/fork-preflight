@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (not released yet)
+## 0.1.0 (2026-11-24)
 
 First release, with data for PX4 v1.18.0. The data ends at v1.18.0 and main
 at 95a0c23482.
